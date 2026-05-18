@@ -9,11 +9,7 @@
   },
   "scripts": {
     "quickstart": "tsx examples/quickstart.ts",
-    "e2e": "tsx examples/e2e-trading-smoke.ts",
-    "e2e:auth-only": "tsx examples/e2e-trading-smoke.ts --auth-only",
-    "market-data": "tsx examples/market-data.ts",
     "full-trader": "tsx examples/full-trader-example.ts",
-    "full-trader-rest": "tsx examples/full-trader-rest.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

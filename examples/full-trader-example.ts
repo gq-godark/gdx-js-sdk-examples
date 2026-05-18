@@ -18,6 +18,8 @@ import {
   type TransportOptions,
 } from '@godark/sdk';
 
+import { loadDotenv, printOrderError } from './dotenv.js';
+
 const SYMBOL = 'BTC-USDC-PERP';
 const STREAM_BUFFER = 256;
 
@@ -146,8 +148,10 @@ async function drainOrderUpdatesForMs(
 }
 
 async function runStrategy(): Promise<void> {
+  loadDotenv();
+
   console.log('='.repeat(60));
-  console.log('  GoDark SDK — Complete Trader Example (JavaScript)');
+  console.log('  GoDark SDK — Complete Trader Example');
   console.log('='.repeat(60));
   console.log(
     `Endpoint: ${EDGE_URL}  (TLS skip verify=${tlsSkip ? 'true' : 'false'})`,
@@ -204,7 +208,7 @@ async function runStrategy(): Promise<void> {
     console.log(`BUY placed: order_id=${buyAck.orderId}  sequence=${buyAck.sequence}`);
   } catch (e: unknown) {
     if (e instanceof GodarkError) {
-      console.error('BUY failed:', e.message);
+      printOrderError('BUY', e);
       await md.disconnect().catch(() => {});
       await client.disconnect();
       return;
@@ -221,7 +225,7 @@ async function runStrategy(): Promise<void> {
     });
     console.log(`Modified: order_id=${modAck.orderId}`);
   } catch (e: unknown) {
-    console.warn('Modify rejected (order may have filled):', e);
+    printOrderError('MODIFY (may have filled before modify took)', e);
   }
 
   await new Promise((r) => setTimeout(r, 1000));
@@ -242,7 +246,7 @@ async function runStrategy(): Promise<void> {
     const cancelAck = await client.cancelOrder(sellAck.orderId, SYMBOL);
     console.log(`SELL cancelled: order_id=${cancelAck.orderId}`);
   } catch (e: unknown) {
-    console.warn('Sell/cancel flow:', e);
+    printOrderError('SELL/CANCEL', e);
   }
 
   await new Promise((r) => setTimeout(r, 1000));

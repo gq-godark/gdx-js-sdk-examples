@@ -11,9 +11,13 @@
  */
 import { GodarkClient } from '@godark/sdk';
 
+import { loadDotenv, printOrderError } from './dotenv.js';
+
 const SYMBOL = 'BTC-USDC-PERP';
 
 async function main(): Promise<void> {
+  loadDotenv();
+
   const apiKeyId = process.env.GODARK_API_KEY_ID?.trim();
   const apiSecret = process.env.GODARK_API_SECRET?.trim();
   const baseUrl = process.env.GODARK_EDGE_URL?.trim();
@@ -48,7 +52,7 @@ async function main(): Promise<void> {
     await client.disconnect();
     console.log('Disconnected');
   } catch (err) {
-    console.error('Error:', err);
+    printOrderError('quickstart', err);
     process.exit(1);
   }
 }
