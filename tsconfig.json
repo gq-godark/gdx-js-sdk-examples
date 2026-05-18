@@ -9,5 +9,5 @@
     "esModuleInterop": true,
     "resolveJsonModule": true
   },
-  "include": ["examples/**/*.ts", "types/**/*.d.ts"]
+  "include": ["examples/**/*.ts"]
 }
