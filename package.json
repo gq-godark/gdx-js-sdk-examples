@@ -17,7 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@godark/sdk": "^0.1.0"
+    "@godark/sdk": "file:./sdk/godark-sdk-0.1.0.tgz"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
