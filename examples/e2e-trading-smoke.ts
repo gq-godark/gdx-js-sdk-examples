@@ -1,5 +1,5 @@
 /**
- * End-to-end trading smoke (mirrors gdx-cpp-sdk-examples e2e_trading_smoke.cpp)
+ * End-to-end trading smoke
  *
  *   npm run e2e
  *   npm run e2e:auth-only

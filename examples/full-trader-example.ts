@@ -1,5 +1,5 @@
 /**
- * Full trader demo (mirrors gdx-cpp-sdk-examples full_trader_example.cpp)
+ * Full trader demo
  *
  *   npm run full-trader
  *

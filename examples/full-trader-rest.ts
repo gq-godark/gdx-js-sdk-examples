@@ -1,5 +1,5 @@
 /**
- * REST-only place + cancel (mirrors gdx-cpp-sdk-examples full_trader_rest.cpp)
+ * REST-only place + cancel
  *
  *   npm run full-trader-rest
  *

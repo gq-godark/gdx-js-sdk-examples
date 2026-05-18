@@ -1,5 +1,5 @@
 /**
- * Public gomarket feed (mirrors gdx-cpp-sdk-examples market_data_example.cpp)
+ * Public gomarket feed
  *
  *   npm run market-data
  *

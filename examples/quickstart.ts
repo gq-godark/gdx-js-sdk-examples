@@ -1,5 +1,5 @@
 /**
- * GoDark SDK — Quickstart (mirrors gdx-cpp-sdk-examples quickstart.cpp)
+ * GoDark SDK — Quickstart
  *
  * Place a far limit sell, then cancel.
  *
