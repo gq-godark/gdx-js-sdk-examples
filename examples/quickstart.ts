@@ -20,7 +20,6 @@ async function main(): Promise<void> {
 
   const apiKeyId = process.env.GODARK_API_KEY_ID?.trim();
   const apiSecret = process.env.GODARK_API_SECRET?.trim();
-  const baseUrl = process.env.GODARK_EDGE_URL?.trim();
 
   if (!apiKeyId || !apiSecret) {
     console.error('Set GODARK_API_KEY_ID and GODARK_API_SECRET');
@@ -30,7 +29,6 @@ async function main(): Promise<void> {
   const client = new GodarkClient({
     apiKeyId,
     apiSecret,
-    ...(baseUrl ? { baseUrl } : {}),
   });
 
   try {
