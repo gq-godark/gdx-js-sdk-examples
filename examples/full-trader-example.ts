@@ -11,6 +11,7 @@
 import {
   GodarkClient,
   GodarkError,
+  GodarkRestClient,
   MarketDataClient,
   type OrderAck,
   type OrderUpdate,
@@ -156,6 +157,20 @@ async function runStrategy(): Promise<void> {
   console.log(
     `Endpoint: ${EDGE_URL}  (TLS skip verify=${tlsSkip ? 'true' : 'false'})`,
   );
+
+  {
+    const rest = new GodarkRestClient({
+      apiKeyId: envFirst(['GDX_API_KEY_ID', 'GODARK_API_KEY_ID'], DEFAULT_API_KEY_ID),
+      apiSecret: envFirst(['GDX_API_SECRET', 'GODARK_API_SECRET'], DEFAULT_API_SECRET),
+    });
+    await rest.connect();
+    try {
+      const bal = await rest.getMyBalance();
+      console.log(`Balance: shielded_raw=${bal.shieldedBalanceRaw.toString()}`);
+    } finally {
+      await rest.disconnect();
+    }
+  }
 
   const client = makeClient();
   client.onOrderUpdate(onOrder);
