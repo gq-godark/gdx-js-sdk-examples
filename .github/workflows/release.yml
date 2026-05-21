@@ -24,7 +24,7 @@ jobs:
   # artifact.
   #
   # Required secrets: GDX_APP_ID + GDX_APP_PRIVATE_KEY (godark-ci App with
-  # contents:read on gdx-js-sdk).
+  # contents:read on gdx-js-sdk and gdx-proto).
   build:
     name: Build Node.js zip
     runs-on: ubuntu-latest
@@ -47,7 +47,7 @@ jobs:
           [ -n "$APP_KEY" ] || missing+=(GDX_APP_PRIVATE_KEY)
           if [ ${#missing[@]} -gt 0 ]; then
             echo "::error::Missing required secret(s): ${missing[*]}"
-            echo "::error::Install the godark-ci GitHub App credentials under repo Settings -> Secrets and variables -> Actions, and ensure the app is installed on gq-godark with contents:read on gdx-js-sdk."
+            echo "::error::Install the godark-ci GitHub App credentials under repo Settings -> Secrets and variables -> Actions, and ensure the app is installed on gq-godark with contents:read on gdx-js-sdk and gdx-proto."
             exit 1
           fi
 
@@ -58,7 +58,9 @@ jobs:
           app-id: ${{ secrets.GDX_APP_ID }}
           private-key: ${{ secrets.GDX_APP_PRIVATE_KEY }}
           owner: gq-godark
-          repositories: gdx-js-sdk
+          repositories: |
+            gdx-js-sdk
+            gdx-proto
 
       - name: Read pinned upstream ref
         id: pin
