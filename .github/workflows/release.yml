@@ -103,7 +103,7 @@ jobs:
             exit 1
           fi
           version="v${base}-build.${{ github.run_number }}"
-          bundle_name="gdx-js-sdk-examples-${version}-node"
+          bundle_name="godark-js-sdk-${version}-node"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "bundle_name=${bundle_name}" >> "$GITHUB_OUTPUT"
           echo "Building ${bundle_name}.zip (@godark/sdk@${base} from upstream pin ${{ steps.pin.outputs.ref }})"
@@ -183,8 +183,8 @@ jobs:
           body: |
             **Automated release** built from commit `${{ github.sha }}`.
 
-            `@godark/sdk` tarball built from upstream `gq-godark/gdx-js-sdk` at pinned ref
-            `${{ needs.build.outputs.pinned_ref }}`.
+            Prebuilt `@godark/sdk` npm tarball and minimal TypeScript examples
+            for the GoDark JavaScript SDK.
 
             ## Install
 

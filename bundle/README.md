@@ -1,19 +1,15 @@
 # GoDark JavaScript SDK
 
-This package provides two reference scripts for the GoDark JavaScript / TypeScript SDK, **plus the vendored `@godark/sdk` npm tarball**, so you can run the examples or scaffold your own bot without a private npm registry.
-
-The SDK is shipped as a single npm tarball (`sdk/godark-sdk-<version>.tgz`) and wired into `package.json` via the `file:` protocol; `npm install` resolves it locally and records its content hash in the lockfile.
+This package provides the GoDark JavaScript SDK and minimal examples for
+encrypted darkpool trading.
 
 Supported order types in this distribution: `MARKET`, `LIMIT`.
 
 ## Package contents
 
-- `examples/quickstart.ts` — minimal connect → far limit sell → cancel
-- `examples/full-trader-example.ts` — reference bot loop: callbacks, market-data client, place / modify / cancel, queue drain
-- `examples/dotenv.ts` — shared `.env` loader and symbolic-error printer used by both example mains
-- `sdk/` — **vendored `@godark/sdk` npm tarball**; `sdk/UPSTREAM_REF` records the upstream commit the tarball was packed from
-- `package.json`, `package-lock.json` — depend on `@godark/sdk` via `file:./sdk/<tarball>`, ready for `npm install`
-- `tsconfig.json` — strict `tsc --noEmit` typecheck gate
+- `examples/` — `quickstart.ts`, `full-trader-example.ts`, `dotenv.ts`
+- `sdk/` — `@godark/sdk` npm tarball (`godark-sdk-*.tgz`)
+- `package.json`, `package-lock.json`, `tsconfig.json`
 - `README.md`, `SDK_REFERENCE.md` — recipient docs
 - `.env.example` — environment template
 
@@ -23,9 +19,7 @@ Supported order types in this distribution: `MARKET`, `LIMIT`.
 |---------|-----------------------------------------------------------------------------|
 | Node.js | ≥ 18 (tested on 20 + 22)                                                    |
 | npm     | ≥ 9 (ships with the Node versions above)                                    |
-| OS      | Linux / macOS / Windows — the tarball is platform-independent JavaScript    |
-
-No private npm registry, no `protoc`, no GitHub access required to install — the SDK is fully self-contained in `sdk/`.
+| OS      | Linux / macOS / Windows                                                    |
 
 ## 2) Create testnet credentials
 
@@ -55,8 +49,8 @@ The OS environment always wins over `.env`.
 ## 4) Install + run
 
 ```bash
-npm install           # hydrates devDeps + the vendored @godark/sdk
-npm run quickstart    # examples/quickstart.ts
+npm install
+npm run quickstart
 ```
 
 Available scripts (see `package.json`):
@@ -69,7 +63,7 @@ Available scripts (see `package.json`):
 
 ## npm integration (your own bot)
 
-The bundle includes a vendored `@godark/sdk` tarball under `sdk/`. To build your own bot against the same SDK revision, install it the same way the examples do:
+Add the tarball from `sdk/` to your `package.json`:
 
 ```json
 // package.json — your own bot
@@ -101,16 +95,6 @@ const ack = await client.placeOrder({
 });
 await client.cancelOrder(ack.orderId, 'BTC-USDC-PERP');
 await client.disconnect();
-```
-
-If you'd rather pin against the upstream `gdx-js-sdk` repository directly (useful if you're tracking a moving branch rather than a release pin), the bundled `sdk/UPSTREAM_REF` file records the exact commit this distribution was packed from:
-
-```json
-{
-  "dependencies": {
-    "@godark/sdk": "git+ssh://git@github.com/gq-godark/gdx-js-sdk.git#<contents of sdk/UPSTREAM_REF>"
-  }
-}
 ```
 
 See `SDK_REFERENCE.md` for the full client API.

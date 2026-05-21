@@ -12,16 +12,14 @@
 #   │   ├── full-trader-example.ts
 #   │   └── dotenv.ts                     (shared .env loader + error printer)
 #   └── sdk/
-#       ├── godark-sdk-<version>.tgz      (vendored npm tarball)
-#       ├── UPSTREAM_REF                  (upstream commit SHA)
-#       └── TARBALL_NAME                  (the filename above)
+#       └── godark-sdk-<version>.tgz      (prebuilt @godark/sdk npm tarball)
 #
 # Recipients unzip, optionally `cp .env.example .env`, then:
-#   npm install         # hydrates devDeps + the vendored @godark/sdk
+#   npm install         # hydrates devDeps + @godark/sdk from sdk/
 #   npm run quickstart  # ./examples/quickstart.ts
 #
 # Usage:
-#   bash scripts/package.sh
+#   bash scripts/package.sh                              # default: godark-js-sdk-node.zip
 #   bash scripts/package.sh my-release-name
 #   UPSTREAM_SRC=/path/to/gdx-js-sdk bash scripts/package.sh
 set -euo pipefail
@@ -30,7 +28,7 @@ UPSTREAM_REPO="gq-godark/gdx-js-sdk"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DIST_NAME="${1:-gdx-js-sdk-examples-node}"
+DIST_NAME="${1:-godark-js-sdk-node}"
 
 cd "$REPO_ROOT"
 
@@ -38,7 +36,8 @@ cd "$REPO_ROOT"
 for required in \
     sdk/UPSTREAM_REF \
     sdk/TARBALL_NAME \
-    package.json \
+    bundle/package.json \
+    bundle/sdk/README.md \
     package-lock.json \
     tsconfig.json \
     bundle/README.md \
@@ -142,8 +141,9 @@ if ! diff -r --brief "$PARITY_DIR/vendored/package" "$PARITY_DIR/fresh/package" 
   rm -rf "$PARITY_DIR"
   exit 1
 fi
-rm -rf "$PARITY_DIR"
 echo "Parity check passed: tarball contents match upstream pack"
+
+SHIP_TARBALL="$PARITY_DIR/fresh/$FRESH_TARBALL"
 
 # ---- stage --------------------------------------------------------------
 STAGING_DIR="$(mktemp -d)"
@@ -158,9 +158,17 @@ cp "${REPO_ROOT}/bundle/SDK_REFERENCE.md"  "$DEST/SDK_REFERENCE.md"
 cp "${REPO_ROOT}/.env.example"             "$DEST/.env.example"
 
 # Build manifests + lockfile so `npm install` from inside the bundle is
-# fully reproducible.
-cp "${REPO_ROOT}/package.json"             "$DEST/package.json"
+# fully reproducible. Recipient-facing package.json lives under bundle/.
+python3 - "$REPO_ROOT/bundle/package.json" "$TARBALL_NAME" > "$DEST/package.json" <<'PY'
+import json, sys
+src, tarball = sys.argv[1], sys.argv[2]
+pkg = json.load(open(src))
+pkg["dependencies"]["@godark/sdk"] = f"file:./sdk/{tarball}"
+json.dump(pkg, sys.stdout, indent=2)
+sys.stdout.write("\n")
+PY
 cp "${REPO_ROOT}/package-lock.json"        "$DEST/package-lock.json"
+sed -i 's/"gdx-js-sdk-examples"/"godark-examples"/g' "$DEST/package-lock.json"
 cp "${REPO_ROOT}/tsconfig.json"            "$DEST/tsconfig.json"
 
 # Examples - the actual demos the recipient is going to run.
@@ -168,10 +176,13 @@ cp "${REPO_ROOT}/examples/quickstart.ts"          "$DEST/examples/"
 cp "${REPO_ROOT}/examples/full-trader-example.ts" "$DEST/examples/"
 cp "${REPO_ROOT}/examples/dotenv.ts"              "$DEST/examples/"
 
-# Vendored SDK tarball + pin metadata.
-cp "$TARBALL_PATH"                                      "$DEST/sdk/$TARBALL_NAME"
-cp "${REPO_ROOT}/sdk/UPSTREAM_REF"                      "$DEST/sdk/UPSTREAM_REF"
-cp "${REPO_ROOT}/sdk/TARBALL_NAME"                      "$DEST/sdk/TARBALL_NAME"
+# Prebuilt @godark/sdk tarball — repacked from the parity-verified upstream
+# pack with a recipient-facing README (internal maintainer docs stripped).
+SANITIZE_DIR="$(mktemp -d)"
+tar -xzf "$SHIP_TARBALL" -C "$SANITIZE_DIR"
+cp "${REPO_ROOT}/bundle/sdk/README.md" "$SANITIZE_DIR/package/README.md"
+tar -czf "$DEST/sdk/$TARBALL_NAME" -C "$SANITIZE_DIR" package
+rm -rf "$PARITY_DIR" "$SANITIZE_DIR"
 
 # ---- zip ----------------------------------------------------------------
 ARCHIVE="$REPO_ROOT/${DIST_NAME}.zip"
@@ -201,8 +212,6 @@ for required in \
   "${DIST_NAME}/examples/quickstart\\.ts" \
   "${DIST_NAME}/examples/full-trader-example\\.ts" \
   "${DIST_NAME}/examples/dotenv\\.ts" \
-  "${DIST_NAME}/sdk/UPSTREAM_REF" \
-  "${DIST_NAME}/sdk/TARBALL_NAME" \
   "${DIST_NAME}/sdk/${TARBALL_NAME//./\\.}"; do
   if ! echo "$LISTING" | grep -E "${required}" >/dev/null; then
     echo "error: bundle missing required entry: ${required}" >&2
@@ -210,6 +219,22 @@ for required in \
   fi
 done
 
+if echo "$LISTING" | grep -E "${DIST_NAME}/(sdk/UPSTREAM_REF|sdk/TARBALL_NAME|/\\.env$)" >/dev/null; then
+  echo "error: bundle contains maintainer-only metadata or .env" >&2
+  exit 1
+fi
+
 echo
 echo "bundle-shape assertion: PASSED"
+
+# Must NOT leak internal repo names or maintainer markers into the archive.
+if unzip -p "$ARCHIVE" 2>/dev/null | strings | grep -qiE \
+  'gdx-js-sdk|UPSTREAM_REF|TARBALL_NAME|refresh_sdk|package\.sh|\bvendored\b|gdx-proto'; then
+  echo "error: bundle contains internal repo references or maintainer markers" >&2
+  unzip -p "$ARCHIVE" 2>/dev/null | strings | grep -iE \
+    'gdx-js-sdk|UPSTREAM_REF|TARBALL_NAME|refresh_sdk|package\.sh|\bvendored\b|gdx-proto' | head -20 >&2 || true
+  exit 1
+fi
+
+echo "leak guard: PASSED"
 echo "built from upstream:    ${UPSTREAM_REPO}@${PINNED_REF} (${upstream_head_sha})"

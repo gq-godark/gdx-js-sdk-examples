@@ -42,7 +42,7 @@ Use `.env.example` as the template for your local `.env`. The OS environment alw
 
 ## GodarkClient API
 
-**Package:** `@godark/sdk` (vendored as `sdk/godark-sdk-<version>.tgz` and installed via the `file:` protocol; the public source is at [`gq-godark/gdx-js-sdk`](https://github.com/gq-godark/gdx-js-sdk)).
+**Package:** `@godark/sdk`
 
 ### Core lifecycle
 
@@ -148,23 +148,13 @@ Both example scripts run under `tsx` (a TypeScript runner for Node) via the `npm
 
 ## npm integration (your own bot)
 
-The bundle includes a vendored `@godark/sdk` tarball under `sdk/`. Depend on it via the `file:` protocol from your own `package.json`:
+Add `@godark/sdk` from the tarball under `sdk/`:
 
 ```json
 {
   "type": "module",
   "dependencies": {
     "@godark/sdk": "file:path/to/this-bundle/sdk/godark-sdk-<version>.tgz"
-  }
-}
-```
-
-Or to pin against the upstream `gdx-js-sdk` repository directly, use the SHA recorded in `sdk/UPSTREAM_REF`:
-
-```json
-{
-  "dependencies": {
-    "@godark/sdk": "git+ssh://git@github.com/gq-godark/gdx-js-sdk.git#<contents of sdk/UPSTREAM_REF>"
   }
 }
 ```
