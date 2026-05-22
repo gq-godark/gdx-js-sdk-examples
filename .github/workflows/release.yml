@@ -1,0 +1,206 @@
+name: CI / Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Cancel in-flight runs of the same PR (so updates don't pile up runners), but
+# never cancel a push-to-main run - releases are precious.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # build: example sources + the vendored npm tarball packaged into a
+  # Node.js bundle zip. The tarball is content-diffed against a fresh
+  # npm pack of gq-godark/gdx-js-sdk at the commit pinned in
+  # sdk/UPSTREAM_REF; scripts/package.sh fails the build on any drift so
+  # local edits to the vendored tarball cannot leak into the released
+  # artifact.
+  #
+  # Required secrets: GDX_APP_ID + GDX_APP_PRIVATE_KEY (godark-ci App with
+  # contents:read on gdx-js-sdk and gdx-proto).
+  build:
+    name: Build Node.js zip
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      bundle_name: ${{ steps.ver.outputs.bundle_name }}
+      pinned_ref: ${{ steps.pin.outputs.ref }}
+    steps:
+      - name: Checkout examples repo
+        uses: actions/checkout@v4
+
+      - name: Verify GitHub App secrets are configured
+        env:
+          APP_ID: ${{ secrets.GDX_APP_ID }}
+          APP_KEY: ${{ secrets.GDX_APP_PRIVATE_KEY }}
+        run: |
+          missing=()
+          [ -n "$APP_ID" ]  || missing+=(GDX_APP_ID)
+          [ -n "$APP_KEY" ] || missing+=(GDX_APP_PRIVATE_KEY)
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required secret(s): ${missing[*]}"
+            echo "::error::Install the godark-ci GitHub App credentials under repo Settings -> Secrets and variables -> Actions, and ensure the app is installed on gq-godark with contents:read on gdx-js-sdk and gdx-proto."
+            exit 1
+          fi
+
+      - name: Mint GDX_APP token (scoped to upstream)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GDX_APP_ID }}
+          private-key: ${{ secrets.GDX_APP_PRIVATE_KEY }}
+          owner: gq-godark
+          repositories: |
+            gdx-js-sdk
+            gdx-proto
+
+      - name: Read pinned upstream ref
+        id: pin
+        run: |
+          if [ ! -f sdk/UPSTREAM_REF ]; then
+            echo "::error::sdk/UPSTREAM_REF missing - run scripts/refresh_sdk.sh and commit it."
+            exit 1
+          fi
+          ref="$(tr -d '[:space:]' < sdk/UPSTREAM_REF)"
+          if [ -z "$ref" ]; then
+            echo "::error::sdk/UPSTREAM_REF is empty"
+            exit 1
+          fi
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+          echo "Pinned upstream ref: ${ref}"
+
+      - name: Checkout pinned upstream gdx-js-sdk
+        uses: actions/checkout@v4
+        with:
+          repository: gq-godark/gdx-js-sdk
+          ref: ${{ steps.pin.outputs.ref }}
+          path: upstream
+          token: ${{ steps.app-token.outputs.token }}
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install zip
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zip unzip
+
+      - name: Compute version + bundle name
+        id: ver
+        run: |
+          base="$(node -p "require('./upstream/package.json').version")"
+          if [ -z "$base" ] || [ "$base" = "undefined" ]; then
+            echo "::error::Could not parse version from upstream/package.json"
+            exit 1
+          fi
+          version="v${base}-build.${{ github.run_number }}"
+          bundle_name="godark-js-sdk-${version}-node"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "bundle_name=${bundle_name}" >> "$GITHUB_OUTPUT"
+          echo "Building ${bundle_name}.zip (@godark/sdk@${base} from upstream pin ${{ steps.pin.outputs.ref }})"
+
+      - name: Build release zip via scripts/package.sh
+        env:
+          UPSTREAM_SRC: ${{ github.workspace }}/upstream
+        run: bash scripts/package.sh ${{ steps.ver.outputs.bundle_name }}
+
+      - name: Recipient smoke — unzip + npm install + typecheck
+        run: |
+          # Verifies the bundle is "install-complete": a recipient with only
+          # the unzipped contents + Node.js + the public npm registry (for
+          # tsx / typescript / @types/node) can install + typecheck the
+          # examples against the vendored @godark/sdk tarball. No GitHub
+          # access required.
+          set -euo pipefail
+          mkdir -p /tmp/recip
+          unzip -q ${{ steps.ver.outputs.bundle_name }}.zip -d /tmp/recip
+          cd /tmp/recip/${{ steps.ver.outputs.bundle_name }}
+
+          echo "=== package contents ==="
+          ls -la
+          ls -la sdk/
+          ls -la examples/
+
+          # No --offline: the recipient needs npmjs.org for the tiny dev-dep
+          # set (tsx, typescript, @types/node). The @godark/sdk package
+          # itself is resolved entirely from the bundle's sdk/ via the
+          # file: protocol in package.json.
+          echo "=== npm install ==="
+          npm install --no-audit --no-fund
+
+          echo "=== npm run typecheck ==="
+          npm run typecheck
+
+          echo "Smoke OK: bundle installs cleanly and example sources typecheck against the vendored SDK."
+
+      - name: Upload zip as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.ver.outputs.bundle_name }}
+          path: ${{ steps.ver.outputs.bundle_name }}.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  # --------------------------------------------------------------------------
+  # release: tag + GitHub release attached to the zip.
+  # Only on push to main, after build passes.
+  # --------------------------------------------------------------------------
+  release:
+    name: Create GitHub release
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download zip from build job
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.bundle_name }}
+          path: ./release-asset
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.version }}
+          name: ${{ needs.build.outputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: ./release-asset/${{ needs.build.outputs.bundle_name }}.zip
+          body: |
+            **Automated release** built from commit `${{ github.sha }}`.
+
+            Prebuilt `@godark/sdk` npm tarball and minimal TypeScript examples
+            for the GoDark JavaScript SDK.
+
+            ## Install
+
+            1. Download `${{ needs.build.outputs.bundle_name }}.zip` from the
+               assets below.
+            2. Unzip and follow `README.md` inside the bundle:
+
+               ```bash
+               unzip ${{ needs.build.outputs.bundle_name }}.zip
+               cd ${{ needs.build.outputs.bundle_name }}
+               cp .env.example .env   # then fill in your testnet creds
+               npm install
+               npm run quickstart
+               ```
+
+            See `README.md` and `SDK_REFERENCE.md` inside the bundle for the
+            full integration docs.
