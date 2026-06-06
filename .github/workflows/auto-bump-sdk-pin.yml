@@ -26,17 +26,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/create-github-app-token@v1
-        id: app-token
+      - name: Mint App token (local-repo writes)
+        id: app-token-local
+        uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.GDX_APP_ID }}
           private-key: ${{ secrets.GDX_APP_PRIVATE_KEY }}
           owner: gq-godark
-          repositories: gdx-js-sdk-examples,gdx-js-sdk
+          repositories: gdx-js-sdk-examples
+          permission-contents: write
+          permission-pull-requests: write
 
-      - uses: actions/checkout@v5
+      - name: Mint App token (upstream + submodule read)
+        id: app-token-upstream
+        uses: actions/create-github-app-token@v1
         with:
-          token: ${{ steps.app-token.outputs.token }}
+          app-id: ${{ secrets.GDX_APP_ID }}
+          private-key: ${{ secrets.GDX_APP_PRIVATE_KEY }}
+          owner: gq-godark
+          # gdx-proto is a submodule of gdx-js-sdk; the upstream checkout below
+          # fetches it with submodules: recursive, which needs read access here.
+          repositories: gdx-js-sdk,gdx-proto
+          permission-contents: read
+
+      - name: Checkout examples (this repo)
+        uses: actions/checkout@v5
+        with:
+          token: ${{ steps.app-token-local.outputs.token }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -57,22 +73,22 @@ jobs:
           echo "sdk_sha=${SHA}" >> "$GITHUB_OUTPUT"
           echo "Vendoring gdx-js-sdk@${SHA}"
 
-      - name: Clone gdx-js-sdk at SHA
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          SDK_SHA: ${{ steps.sha.outputs.sdk_sha }}
-        run: |
-          set -euo pipefail
-          # Recurse so gdx-proto (committed as a submodule on the SDK side) is
-          # available; the SDK's build step regenerates proto bindings from it.
-          git clone --recurse-submodules \
-            "https://x-access-token:${GH_TOKEN}@github.com/gq-godark/gdx-js-sdk.git" \
-            /tmp/gdx-js-sdk
-          git -C /tmp/gdx-js-sdk checkout "$SDK_SHA"
-          git -C /tmp/gdx-js-sdk submodule update --init --recursive
+      - name: Checkout upstream gdx-js-sdk at dispatched SHA (with proto submodule)
+        uses: actions/checkout@v5
+        with:
+          repository: gq-godark/gdx-js-sdk
+          ref: ${{ steps.sha.outputs.sdk_sha }}
+          path: upstream
+          token: ${{ steps.app-token-upstream.outputs.token }}
+          fetch-depth: 1
+          # actions/checkout injects the token above as the submodule auth
+          # header, so the private gdx-proto submodule clones cleanly (the old
+          # `git clone --recurse-submodules` left gdx-proto's URL unauthenticated
+          # and the job failed with "could not read Username for github.com").
+          submodules: recursive
 
       - name: Refresh vendored sdk/
-        run: bash scripts/refresh_sdk.sh /tmp/gdx-js-sdk
+        run: bash scripts/refresh_sdk.sh "${GITHUB_WORKSPACE}/upstream"
 
       - name: Regenerate package-lock against new tarball
         run: |
@@ -95,7 +111,7 @@ jobs:
       - name: Configure git + open rolling PR
         if: steps.drift.outputs.drift == 'true'
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token-local.outputs.token }}
           BRANCH: auto/bump-sdk-pin
           SDK_SHA: ${{ steps.sha.outputs.sdk_sha }}
         run: |
@@ -121,8 +137,11 @@ jobs:
             so any tampering between dispatch and merge fails CI loudly."
           git push --force origin "$BRANCH"
 
-          if gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
-            echo "Existing PR force-pushed; no new PR opened."
+          # Only treat an OPEN PR as "existing"; `gh pr view <branch>` also
+          # matches a previously merged/closed rolling PR, which would suppress
+          # opening a fresh one for the next merge cycle.
+          if [ -n "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')" ]; then
+            echo "Existing open PR force-pushed; no new PR opened."
             gh pr view "$BRANCH" --json url --jq .url
           else
             gh pr create \
