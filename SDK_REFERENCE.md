@@ -12,8 +12,9 @@ A trimmed, recipient-facing copy is maintained at [`bundle/SDK_REFERENCE.md`](bu
 import { GodarkClient } from '@godark/sdk';
 
 const client = new GodarkClient({
-  apiKeyId:  process.env.GODARK_API_KEY_ID!,
-  apiSecret: process.env.GODARK_API_SECRET!,
+  apiKeyId:   process.env.GODARK_API_KEY_ID!,
+  apiSecret:  process.env.GODARK_API_SECRET!,
+  passphrase: process.env.GODARK_PASSPHRASE!,
   // baseUrl defaults to wss://api.godark-dex.com when omitted
 });
 
@@ -38,6 +39,7 @@ The MM examples expect:
 
 - `GODARK_API_KEY_ID` (required)
 - `GODARK_API_SECRET` (required)
+- `GODARK_PASSPHRASE` (required for API key-pair auth)
 - `GODARK_EDGE_URL` (optional, defaults to `wss://api.godark-dex.com`)
 
 Use `.env.example` as the template for your local `.env`. The shared helper `examples/dotenv.ts` (`loadDotenv` + `printOrderError`) is reused by both example scripts.

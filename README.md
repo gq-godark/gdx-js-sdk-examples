@@ -39,6 +39,7 @@ Required keys:
 
 - `GODARK_API_KEY_ID`
 - `GODARK_API_SECRET`
+- `GODARK_PASSPHRASE` — required for API key-pair auth.
 
 Optional:
 
@@ -56,7 +57,7 @@ Download the latest `gdx-js-sdk-examples-*-node.zip` from [GitHub Releases](http
 unzip gdx-js-sdk-examples-*-node.zip
 cd gdx-js-sdk-examples-node/
 cp .env.example .env
-# fill in GODARK_API_KEY_ID, GODARK_API_SECRET
+# fill in GODARK_API_KEY_ID, GODARK_API_SECRET, GODARK_PASSPHRASE
 
 npm install              # hydrates devDeps + the vendored @godark/sdk
 npm run quickstart       # examples/quickstart.ts
