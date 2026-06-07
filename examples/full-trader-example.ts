@@ -6,6 +6,7 @@
  * Environment (optional overrides):
  *   GDX_EDGE_URL / GODARK_EDGE_URL (default wss://api.godark-dex.com)
  *   GDX_API_KEY_ID / GODARK_API_KEY_ID, GDX_API_SECRET / GODARK_API_SECRET
+ *   GDX_PASSPHRASE / GODARK_PASSPHRASE
  *   GDX_TLS_SKIP_VERIFY / GODARK_TLS_SKIP_VERIFY
  */
 import {
@@ -26,6 +27,7 @@ const STREAM_BUFFER = 256;
 
 const DEFAULT_API_KEY_ID = 'YOUR_API_KEY_ID';
 const DEFAULT_API_SECRET = 'YOUR_API_SECRET';
+const DEFAULT_API_PASSPHRASE = 'YOUR_API_PASSPHRASE';
 
 function envFirst(
   names: readonly string[],
@@ -115,9 +117,11 @@ function onTrade(msg: Record<string, unknown>): void {
 function makeClient(): GodarkClient {
   const kid = envFirst(['GDX_API_KEY_ID', 'GODARK_API_KEY_ID'], DEFAULT_API_KEY_ID);
   const secret = envFirst(['GDX_API_SECRET', 'GODARK_API_SECRET'], DEFAULT_API_SECRET);
+  const passphrase = envFirst(['GDX_PASSPHRASE', 'GODARK_PASSPHRASE'], DEFAULT_API_PASSPHRASE);
   return new GodarkClient({
     apiKeyId: kid,
     apiSecret: secret,
+    passphrase,
     baseUrl: EDGE_URL,
     transportOptions,
     streamBufferSize: STREAM_BUFFER,
@@ -162,6 +166,7 @@ async function runStrategy(): Promise<void> {
     const rest = new GodarkRestClient({
       apiKeyId: envFirst(['GDX_API_KEY_ID', 'GODARK_API_KEY_ID'], DEFAULT_API_KEY_ID),
       apiSecret: envFirst(['GDX_API_SECRET', 'GODARK_API_SECRET'], DEFAULT_API_SECRET),
+      passphrase: envFirst(['GDX_PASSPHRASE', 'GODARK_PASSPHRASE'], DEFAULT_API_PASSPHRASE),
     });
     await rest.connect();
     try {

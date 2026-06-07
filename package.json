@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@godark/sdk": "file:./sdk/godark-sdk-0.1.0.tgz"
+    "@godark/sdk": "file:./sdk/godark-sdk-0.2.0.tgz"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

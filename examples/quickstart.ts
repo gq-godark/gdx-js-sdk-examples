@@ -6,7 +6,7 @@
  *   npm run quickstart
  *
  * Environment:
- *   GODARK_API_KEY_ID, GODARK_API_SECRET
+ *   GODARK_API_KEY_ID, GODARK_API_SECRET, GODARK_PASSPHRASE
  *   GODARK_EDGE_URL (optional; default wss://api.godark-dex.com)
  */
 import { GodarkClient } from '@godark/sdk';
@@ -20,15 +20,17 @@ async function main(): Promise<void> {
 
   const apiKeyId = process.env.GODARK_API_KEY_ID?.trim();
   const apiSecret = process.env.GODARK_API_SECRET?.trim();
+  const passphrase = process.env.GODARK_PASSPHRASE?.trim();
 
-  if (!apiKeyId || !apiSecret) {
-    console.error('Set GODARK_API_KEY_ID and GODARK_API_SECRET');
+  if (!apiKeyId || !apiSecret || !passphrase) {
+    console.error('Set GODARK_API_KEY_ID, GODARK_API_SECRET and GODARK_PASSPHRASE');
     process.exit(1);
   }
 
   const client = new GodarkClient({
     apiKeyId,
     apiSecret,
+    passphrase,
   });
 
   try {
