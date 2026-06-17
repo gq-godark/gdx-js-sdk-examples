@@ -14,6 +14,7 @@ import {
   GodarkError,
   GodarkRestClient,
   MarketDataClient,
+  type MassQuoteLegInput,
   type OrderAck,
   type OrderUpdate,
   type PositionUpdate,
@@ -274,6 +275,54 @@ async function runStrategy(): Promise<void> {
   console.log('Draining any remaining queued updates (short window)...');
   const drained = await drainOrderUpdatesForMs(client, 400);
   console.log(`Drained ${drained} queued order update(s)`);
+
+  // --- Bulk quote (mass quote) ---
+  // Place a whole ladder of resting quotes in one batched request. Leaving
+  // postOnly undefined (or true) keeps post-only behaviour: a leg that would
+  // cross is rejected as "failed" so the batch fuses into a single MPC round.
+  // Pass postOnly: false for the relaxed path, where a crossing leg takes
+  // liquidity up to its limit and rests the remainder (the number of taker
+  // fills is reported per leg as fillCount).
+  console.log('Mass-quoting a 3-level BUY ladder (post-only)...');
+  const ladder: MassQuoteLegInput[] = [
+    { side: 'BUY', price: 66_000, quantity: 0.02 },
+    { side: 'BUY', price: 65_500, quantity: 0.02 },
+    { side: 'BUY', price: 65_000, quantity: 0.02 },
+  ];
+  const restingIds: string[] = [];
+  try {
+    const mq = await client.massQuote(SYMBOL, ladder, 1);
+    console.log(
+      `Mass quote: success=${mq.success} sequence=${mq.sequence} legs=${mq.results.length}`,
+    );
+    for (const r of mq.results) {
+      console.log(
+        `  leg ${r.legIndex}: status=${r.status} new_order_id=${r.newOrderId ?? '-'} fills=${r.fillCount} err=${r.errorCode ?? '-'}`,
+      );
+      if (r.status === 'open' && r.newOrderId) restingIds.push(r.newOrderId);
+    }
+  } catch (e: unknown) {
+    printOrderError('MASS QUOTE', e);
+  }
+
+  await new Promise((r) => setTimeout(r, 1000));
+
+  if (restingIds.length > 0) {
+    console.log(
+      `Batch-cancelling ${restingIds.length} ladder orders (cleanup)...`,
+    );
+    try {
+      const bc = await client.batchCancel(SYMBOL, restingIds);
+      for (const r of bc.results) {
+        console.log(
+          `  cancel id=${r.orderId}: cancelled=${r.cancelled} err=${r.errorCode ?? '-'}`,
+        );
+      }
+    } catch (e: unknown) {
+      printOrderError('BATCH CANCEL', e);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
 
   console.log('Cancelling original BUY (cleanup)...');
   try {
