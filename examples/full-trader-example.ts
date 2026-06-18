@@ -283,11 +283,14 @@ async function runStrategy(): Promise<void> {
   // Pass postOnly: false for the relaxed path, where a crossing leg takes
   // liquidity up to its limit and rests the remainder (the number of taker
   // fills is reported per leg as fillCount).
+  // GDX_BASE anchors the ladder/cross near the live mark (default 64000).
+  const base = Number(process.env.GDX_BASE ?? '64000') || 64_000;
+  const round1 = (x: number) => Math.round(x * 10) / 10;
   console.log('Mass-quoting a 3-level BUY ladder (post-only)...');
   const ladder: MassQuoteLegInput[] = [
-    { side: 'BUY', price: 66_000, quantity: 0.02 },
-    { side: 'BUY', price: 65_500, quantity: 0.02 },
-    { side: 'BUY', price: 65_000, quantity: 0.02 },
+    { side: 'BUY', price: round1(base * (1 - 0.003)), quantity: 0.02 },
+    { side: 'BUY', price: round1(base * (1 - 0.006)), quantity: 0.02 },
+    { side: 'BUY', price: round1(base * (1 - 0.009)), quantity: 0.02 },
   ];
   const restingIds: string[] = [];
   try {
@@ -323,6 +326,44 @@ async function runStrategy(): Promise<void> {
     }
     await new Promise((r) => setTimeout(r, 500));
   }
+
+  // Demonstrate the batch-level postOnly flag on a crossing leg.
+  const crossPx = round1(base * 1.02);
+  // postOnly=true: a crossing leg is rejected (would-cross, error_code 2018).
+  console.log('Mass-quoting a crossing BUY with postOnly=true (expect rejected/2018)...');
+  try {
+    const mq = await client.massQuote(
+      SYMBOL,
+      [{ side: 'BUY', price: crossPx, quantity: 0.001 }],
+      1,
+      true,
+    );
+    for (const r of mq.results) {
+      console.log(`  leg ${r.legIndex}: status=${r.status} err=${r.errorCode ?? '-'} fills=${r.fillCount}`);
+    }
+  } catch (e: unknown) {
+    printOrderError('MASS QUOTE postOnly=true', e);
+  }
+  await new Promise((r) => setTimeout(r, 500));
+
+  // postOnly=false (relaxed): crossing leg takes liquidity, then rests remainder.
+  console.log('Mass-quoting a crossing BUY with postOnly=false (expect filled, fills>0)...');
+  try {
+    const mq = await client.massQuote(
+      SYMBOL,
+      [{ side: 'BUY', price: crossPx, quantity: 0.003 }],
+      1,
+      false,
+    );
+    for (const r of mq.results) {
+      console.log(
+        `  leg ${r.legIndex}: status=${r.status} new_order_id=${r.newOrderId ?? '-'} err=${r.errorCode ?? '-'} fills=${r.fillCount}`,
+      );
+    }
+  } catch (e: unknown) {
+    printOrderError('MASS QUOTE postOnly=false', e);
+  }
+  await new Promise((r) => setTimeout(r, 1000));
 
   console.log('Cancelling original BUY (cleanup)...');
   try {
