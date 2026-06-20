@@ -348,6 +348,9 @@ async function runStrategy(): Promise<void> {
 
   // postOnly=false (relaxed): crossing leg takes liquidity, then rests remainder.
   console.log('Mass-quoting a crossing BUY with postOnly=false (expect filled, fills>0)...');
+  // The relaxed leg may rest a remainder after taking liquidity; track its id so
+  // it gets cleaned up below instead of leaking onto the book.
+  const strayIds: string[] = [];
   try {
     const mq = await client.massQuote(
       SYMBOL,
@@ -359,11 +362,25 @@ async function runStrategy(): Promise<void> {
       console.log(
         `  leg ${r.legIndex}: status=${r.status} new_order_id=${r.newOrderId ?? '-'} err=${r.errorCode ?? '-'} fills=${r.fillCount}`,
       );
+      if (r.status === 'open' && r.newOrderId) strayIds.push(r.newOrderId);
     }
   } catch (e: unknown) {
     printOrderError('MASS QUOTE postOnly=false', e);
   }
   await new Promise((r) => setTimeout(r, 1000));
+
+  if (strayIds.length > 0) {
+    console.log(`Batch-cancelling ${strayIds.length} relaxed-leg remainder(s) (cleanup)...`);
+    try {
+      const bc = await client.batchCancel(SYMBOL, strayIds);
+      for (const r of bc.results) {
+        console.log(`  cancel id=${r.orderId}: cancelled=${r.cancelled} err=${r.errorCode ?? '-'}`);
+      }
+    } catch (e: unknown) {
+      printOrderError('BATCH CANCEL (remainder)', e);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
 
   console.log('Cancelling original BUY (cleanup)...');
   try {
