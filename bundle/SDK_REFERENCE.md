@@ -36,6 +36,8 @@ The MM examples expect:
 
 - `GODARK_API_KEY_ID` (required)
 - `GODARK_API_SECRET` (required)
+- `GODARK_PASSPHRASE` (required for API key-pair auth)
+- `GDX_NOISE_STATIC_PUBLIC_KEY` (required for encrypted WebSocket trading) — 64 hex chars; aliases `GDX_NOISE_STATIC_PUBKEY`, `GODARK_NOISE_STATIC_PUBLIC_KEY`
 - `GODARK_EDGE_URL` (optional, defaults to `wss://api.godark-dex.com`)
 
 Use `.env.example` as the template for your local `.env`. The OS environment always wins over `.env`.
@@ -49,7 +51,7 @@ Use `.env.example` as the template for your local `.env`. The OS environment alw
 | Method        | Signature                                                   | Purpose                                              |
 |---------------|-------------------------------------------------------------|------------------------------------------------------|
 | constructor   | `new GodarkClient(opts: GodarkClientOptions)`               | Construct the client                                 |
-| `connect`     | `connect(): Promise<void>`                                  | Authenticate + establish encrypted session           |
+| `connect`     | `connect(): Promise<void>`                                  | Authenticate + Noise XK handshake + encrypted session           |
 | `disconnect`  | `disconnect(): Promise<void>`                               | Graceful disconnect                                  |
 | `userUuid`    | `readonly userUuid: string \| undefined`                    | Authenticated user id (populated after `connect`)    |
 
@@ -130,7 +132,7 @@ Note: the SDK accepts additional order types (`PEG_TO_*`) for compatibility with
 `GodarkError` is the base class for every error type the SDK throws. Concrete subclasses (all in the public exports):
 
 - `AuthenticationError` — API key auth failed
-- `SessionError` — ECDH session setup or rekey failed
+- `SessionError` — Noise XK handshake or rekey failed
 - `OrderError` — server rejected the order; carries `errorCode?: string` for the symbolic reason (e.g. `'PRICE_DEVIATION_TOO_LARGE'`, `'MARGIN_INSUFFICIENT'`). The shared `examples/dotenv.ts` has a `printOrderError(op, err)` helper that surfaces this.
 - `ConnectionError` — WebSocket transport failure
 - `EncryptionError` — AES-GCM encrypt / decrypt failed

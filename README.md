@@ -41,6 +41,8 @@ Required keys:
 - `GODARK_API_SECRET`
 - `GODARK_PASSPHRASE` — required for API key-pair auth.
 
+- `GDX_NOISE_STATIC_PUBLIC_KEY` — required for encrypted WebSocket trading (64-hex sequencer static X25519 key). Aliases: `GDX_NOISE_STATIC_PUBKEY`, `GODARK_NOISE_STATIC_PUBLIC_KEY`.
+
 Optional:
 
 - `GODARK_EDGE_URL` — local testing only; if unset, examples use `wss://api.godark-dex.com`.

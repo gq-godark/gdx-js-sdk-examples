@@ -40,6 +40,7 @@ The MM examples expect:
 - `GODARK_API_KEY_ID` (required)
 - `GODARK_API_SECRET` (required)
 - `GODARK_PASSPHRASE` (required for API key-pair auth)
+- `GDX_NOISE_STATIC_PUBLIC_KEY` (required for encrypted WebSocket trading) — sequencer static X25519 public key (64 hex chars). Aliases: `GDX_NOISE_STATIC_PUBKEY`, `GODARK_NOISE_STATIC_PUBLIC_KEY`. Or set `noiseStaticPublicKeyHex` on `GodarkClientOptions`.
 - `GODARK_EDGE_URL` (optional, defaults to `wss://api.godark-dex.com`)
 
 Use `.env.example` as the template for your local `.env`. The shared helper `examples/dotenv.ts` (`loadDotenv` + `printOrderError`) is reused by both example scripts.
@@ -82,7 +83,7 @@ To consume `@godark/sdk` from your own project outside this repo:
 | Method       | Signature                                                       | Purpose                                       |
 |--------------|-----------------------------------------------------------------|-----------------------------------------------|
 | constructor  | `new GodarkClient(opts: GodarkClientOptions)`                   | Construct the client                          |
-| `connect`    | `connect(): Promise<void>`                                      | Authenticate + establish encrypted session    |
+| `connect`    | `connect(): Promise<void>`                                      | Authenticate + Noise XK handshake + encrypted session |
 | `disconnect` | `disconnect(): Promise<void>`                                   | Graceful disconnect                           |
 | `userUuid`   | `readonly userUuid: string \| undefined`                        | Authenticated user id (set after `connect`)   |
 
@@ -211,7 +212,7 @@ Note: the SDK additionally exposes parallel `*_FROM_PROTO` / `*_TO_PROTO` lookup
 | Class                  | When                                                                                       |
 |------------------------|--------------------------------------------------------------------------------------------|
 | `AuthenticationError`  | API key rejection at session bring-up                                                      |
-| `SessionError`         | ECDH session setup or rekey failed                                                         |
+| `SessionError`         | Noise XK handshake or rekey failed                                                         |
 | `OrderError`           | Order rejected by the sequencer; carries `errorCode?: string` (symbolic reason)            |
 | `ConnectionError`      | WebSocket transport failure                                                                |
 | `EncryptionError`      | AES-GCM encrypt / decrypt failure                                                          |
