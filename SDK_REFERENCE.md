@@ -4,7 +4,7 @@ This is the comprehensive reference for maintainers and developers working *insi
 
 A trimmed, recipient-facing copy is maintained at [`bundle/SDK_REFERENCE.md`](bundle/SDK_REFERENCE.md) and is the one copied into the root of released ZIP bundles as `SDK_REFERENCE.md`. The bundle version intentionally omits sections that recipients don't need (refresh / parity / pin discipline, error-code internals, forward-compat strategy, SDK sourcing options).
 
-> Scope: the MM examples use **WebSocket encrypted trading** via `GodarkClient` plus the public **market-data** feed via `MarketDataClient`. A separate REST surface (`GodarkRestClient`) is included in the npm tarball for callers who prefer HTTP but is not exercised by the bundled examples. Order placement support is limited to `MARKET` and `LIMIT`.
+> Scope: the MM examples use **WebSocket encrypted trading** via `GodarkClient` plus the public **market-data** feed via `MarketDataClient`. Encrypted REST trading is not supported — all order flow (place / modify / cancel / massQuote) runs over the Noise XK WebSocket client. Order placement support is limited to `MARKET` and `LIMIT`.
 
 ## Quick Start
 
@@ -126,7 +126,13 @@ const client = new GodarkClient({
 
 ### Concurrency rule
 
-Only one trading command (`placeOrder`, `cancelOrder`, `modifyOrder`) should be in flight at a time. The push streams are independent and may be consumed concurrently — that's the intended pattern in `full-trader-example.ts`, which combines a callback consumer with a short `orderUpdates()` drain.
+`GodarkClient` routes trading commands by correlation id, so multiple commands
+(`placeOrder`, `cancelOrder`, `modifyOrder`, `massQuote`, `batchCancel`, …) can
+be in flight concurrently. Encrypted REST trading is not supported; all order
+flow goes over the WebSocket client. The push streams are independent and may
+be consumed concurrently — that's the intended pattern in
+`full-trader-example.ts`, which combines a callback consumer with a short
+`orderUpdates()` drain.
 
 ## MarketDataClient
 
@@ -148,9 +154,11 @@ await md.disconnect();
 
 The same `TransportOptions` shape used by `GodarkClient` is accepted by the `MarketDataClient` constructor; reuse it for proxy / TLS options.
 
-## GodarkRestClient (HTTP path, not exercised by the bundled examples)
+## Encrypted REST trading (unsupported)
 
-`GodarkRestClient` provides an encrypted **REST** path that mirrors the WebSocket trading surface (`placeOrder`, `cancelOrder`). It is fully exported from the npm tarball; the examples shipped in this distribution only exercise the WebSocket path. Refer to the upstream `gdx-js-sdk` README for the REST flow.
+Encrypted REST trading is not supported under Noise XK. Prefer `GodarkClient`
+over the WebSocket. Public REST reads (if present in the upstream SDK) remain
+available separately; they are not exercised by these examples.
 
 ## Core Types
 
@@ -253,7 +261,7 @@ The `OrderError.errorCode` field already carries the symbolic string for thrown 
 | File                                     | Purpose                                                                                           |
 |------------------------------------------|---------------------------------------------------------------------------------------------------|
 | `examples/quickstart.ts`                 | Minimal connect, place, cancel                                                                    |
-| `examples/full-trader-example.ts`        | Reference bot flow with private streams (callbacks + iterator drain), market data, place/modify/cancel cycle |
+| `examples/full-trader-example.ts`        | Reference bot flow with private streams (callbacks + iterator drain), market data, place/modify/cancel/mass-quote/batch-cancel |
 | `examples/dotenv.ts`                     | Shared helper (`loadDotenv` + `printOrderError`)                                                  |
 
 ## SDK source layout (vendored)

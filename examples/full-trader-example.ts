@@ -12,10 +12,11 @@
 import {
   GodarkClient,
   GodarkError,
-  GodarkRestClient,
   MarketDataClient,
+  type MassQuoteLegInput,
   type OrderAck,
   type OrderUpdate,
+  type PositionsSnapshot,
   type PositionUpdate,
   type TransportOptions,
 } from '@godark/sdk';
@@ -73,6 +74,8 @@ const orderLog: OrderUpdate[] = [];
 const positionLog: PositionUpdate[] = [];
 
 let bestAsk: number | null = null;
+/** Live BTC-USDC-PERP mark from positions snapshots (symbol_id 1). */
+let lastBtcMark: number | null = null;
 
 function onOrder(update: OrderUpdate): void {
   orderLog.push(update);
@@ -86,6 +89,15 @@ function onPosition(update: PositionUpdate): void {
   console.log(
     `POS    side=${update.side.padEnd(4)}  size=${update.size.padEnd(8)}  entry=${update.entryPrice}`,
   );
+}
+
+function onPositionsSnapshot(snap: PositionsSnapshot): void {
+  for (const row of snap.rows) {
+    if (row.symbolId === 1 && row.markPrice) {
+      const m = Number(row.markPrice);
+      if (Number.isFinite(m) && m > 0) lastBtcMark = m;
+    }
+  }
 }
 
 function onReconnect(): void {
@@ -162,24 +174,10 @@ async function runStrategy(): Promise<void> {
     `Endpoint: ${EDGE_URL}  (TLS skip verify=${tlsSkip ? 'true' : 'false'})`,
   );
 
-  {
-    const rest = new GodarkRestClient({
-      apiKeyId: envFirst(['GDX_API_KEY_ID', 'GODARK_API_KEY_ID'], DEFAULT_API_KEY_ID),
-      apiSecret: envFirst(['GDX_API_SECRET', 'GODARK_API_SECRET'], DEFAULT_API_SECRET),
-      passphrase: envFirst(['GDX_PASSPHRASE', 'GODARK_PASSPHRASE'], DEFAULT_API_PASSPHRASE),
-    });
-    await rest.connect();
-    try {
-      const bal = await rest.getMyBalance();
-      console.log(`Balance: shielded_raw=${bal.shieldedBalanceRaw.toString()}`);
-    } finally {
-      await rest.disconnect();
-    }
-  }
-
   const client = makeClient();
   client.onOrderUpdate(onOrder);
   client.onPositionUpdate(onPosition);
+  client.onPositionsSnapshot(onPositionsSnapshot);
   client.onReconnect(onReconnect);
 
   console.log('Connecting...');
@@ -271,9 +269,110 @@ async function runStrategy(): Promise<void> {
 
   await new Promise((r) => setTimeout(r, 1000));
 
-  console.log('Draining any remaining queued updates (short window)...');
-  const drained = await drainOrderUpdatesForMs(client, 400);
-  console.log(`Drained ${drained} queued order update(s)`);
+  // --- Bulk quote (mass quote) -------------------------------------------
+  // Place a whole ladder of resting quotes in a single batched request. With
+  // the default (post_only) mode every leg is post-only: a leg that would
+  // cross is rejected as "failed" so the batch fuses into one MPC round. Pass
+  // postOnly: false for the relaxed path, where a crossing leg takes liquidity
+  // up to its limit and rests the remainder (reported per leg as fillCount).
+  // Anchor the ladder/cross to the live BTC mark captured from the snapshot so
+  // the crossing demo below is deterministic regardless of current price. Fall
+  // back to GDX_BASE (default 64000) only if no mark was seen yet.
+  const baseEnv = Number(process.env.GDX_BASE ?? '');
+  const base =
+    lastBtcMark && lastBtcMark > 0
+      ? lastBtcMark
+      : Number.isFinite(baseEnv) && baseEnv > 0
+        ? baseEnv
+        : 64_000;
+  console.log(`Mass-quoting a 3-level BUY ladder (post-only), base=${base.toFixed(2)}...`);
+  const ladder: MassQuoteLegInput[] = [
+    { side: 'BUY', price: Math.round(base * (1 - 0.003) * 10) / 10, quantity: 0.02 },
+    { side: 'BUY', price: Math.round(base * (1 - 0.006) * 10) / 10, quantity: 0.02 },
+    { side: 'BUY', price: Math.round(base * (1 - 0.009) * 10) / 10, quantity: 0.02 },
+  ];
+  const restingIds: string[] = [];
+  try {
+    const mq = await client.massQuote(SYMBOL, ladder, 1);
+    console.log(
+      `Mass quote: success=${mq.success} sequence=${mq.sequence} legs=${mq.results.length}`,
+    );
+    for (const r of mq.results) {
+      console.log(
+        `  leg ${r.legIndex}: status=${r.status} new_order_id=${r.newOrderId ?? ''} fills=${r.fillCount} err=${r.errorCode ?? ''}`,
+      );
+      if (r.status === 'open' && r.newOrderId) restingIds.push(r.newOrderId);
+    }
+  } catch (e: unknown) {
+    printOrderError('Mass quote', e);
+  }
+
+  await new Promise((r) => setTimeout(r, 1000));
+  await drainOrderUpdatesForMs(client, 400);
+
+  if (restingIds.length > 0) {
+    console.log(`Batch-cancelling ${restingIds.length} ladder orders (cleanup)...`);
+    try {
+      const bc = await client.batchCancel(
+        SYMBOL,
+        restingIds.map((id) => BigInt(id)),
+      );
+      for (const r of bc.results) {
+        console.log(
+          `  cancel id=${r.orderId}: cancelled=${r.cancelled} err=${r.errorCode ?? ''}`,
+        );
+      }
+    } catch (e: unknown) {
+      printOrderError('Batch cancel', e);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+    await drainOrderUpdatesForMs(client, 400);
+  }
+
+  // Demonstrate the batch-level postOnly flag on a crossing leg. Price a BUY
+  // ~5% above the live mark: aggressive enough to cross the resting ask, yet
+  // within the exchange's 10%-of-oracle limit.
+  const crossPx = Math.round(base * 1.05 * 10) / 10;
+  console.log(
+    'Mass-quoting a crossing BUY with postOnly=true (expect rejected/2018)...',
+  );
+  try {
+    const mq = await client.massQuote(
+      SYMBOL,
+      [{ side: 'BUY', price: crossPx, quantity: 0.001 }],
+      1,
+      true,
+    );
+    for (const r of mq.results) {
+      console.log(
+        `  leg ${r.legIndex}: status=${r.status} err=${r.errorCode ?? ''} fills=${r.fillCount}`,
+      );
+    }
+  } catch (e: unknown) {
+    printOrderError('postOnly=true mass quote', e);
+  }
+  await new Promise((r) => setTimeout(r, 500));
+
+  console.log(
+    'Mass-quoting a crossing BUY with postOnly=false (expect filled, fillCount>0)...',
+  );
+  try {
+    const mq = await client.massQuote(
+      SYMBOL,
+      [{ side: 'BUY', price: crossPx, quantity: 0.003 }],
+      1,
+      false,
+    );
+    for (const r of mq.results) {
+      console.log(
+        `  leg ${r.legIndex}: status=${r.status} new_order_id=${r.newOrderId ?? ''} err=${r.errorCode ?? ''} fills=${r.fillCount}`,
+      );
+    }
+  } catch (e: unknown) {
+    printOrderError('postOnly=false mass quote', e);
+  }
+  await new Promise((r) => setTimeout(r, 1000));
+  await drainOrderUpdatesForMs(client, 400);
 
   console.log('Cancelling original BUY (cleanup)...');
   try {
