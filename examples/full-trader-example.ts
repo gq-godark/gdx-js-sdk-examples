@@ -7,12 +7,12 @@
  *   GDX_EDGE_URL / GODARK_EDGE_URL (default wss://api.godark-dex.com)
  *   GDX_API_KEY_ID / GODARK_API_KEY_ID, GDX_API_SECRET / GODARK_API_SECRET
  *   GDX_PASSPHRASE / GODARK_PASSPHRASE
+ *   GDX_NOISE_STATIC_PUBLIC_KEY (required for Noise XK)
  *   GDX_TLS_SKIP_VERIFY / GODARK_TLS_SKIP_VERIFY
  */
 import {
   GodarkClient,
   GodarkError,
-  GodarkRestClient,
   MarketDataClient,
   type MassQuoteLegInput,
   type OrderAck,
@@ -119,11 +119,16 @@ function makeClient(): GodarkClient {
   const kid = envFirst(['GDX_API_KEY_ID', 'GODARK_API_KEY_ID'], DEFAULT_API_KEY_ID);
   const secret = envFirst(['GDX_API_SECRET', 'GODARK_API_SECRET'], DEFAULT_API_SECRET);
   const passphrase = envFirst(['GDX_PASSPHRASE', 'GODARK_PASSPHRASE'], DEFAULT_API_PASSPHRASE);
+  const noisePin = envFirst(
+    ['GDX_NOISE_STATIC_PUBLIC_KEY', 'GDX_NOISE_STATIC_PUBKEY', 'GODARK_NOISE_STATIC_PUBLIC_KEY'],
+    '',
+  );
   return new GodarkClient({
     apiKeyId: kid,
     apiSecret: secret,
     passphrase,
     baseUrl: EDGE_URL,
+    noiseStaticPublicKeyHex: noisePin || undefined,
     transportOptions,
     streamBufferSize: STREAM_BUFFER,
     autoReconnect: true,
@@ -163,21 +168,6 @@ async function runStrategy(): Promise<void> {
     `Endpoint: ${EDGE_URL}  (TLS skip verify=${tlsSkip ? 'true' : 'false'})`,
   );
 
-  {
-    const rest = new GodarkRestClient({
-      apiKeyId: envFirst(['GDX_API_KEY_ID', 'GODARK_API_KEY_ID'], DEFAULT_API_KEY_ID),
-      apiSecret: envFirst(['GDX_API_SECRET', 'GODARK_API_SECRET'], DEFAULT_API_SECRET),
-      passphrase: envFirst(['GDX_PASSPHRASE', 'GODARK_PASSPHRASE'], DEFAULT_API_PASSPHRASE),
-    });
-    await rest.connect();
-    try {
-      const bal = await rest.getMyBalance();
-      console.log(`Balance: shielded_raw=${bal.shieldedBalanceRaw.toString()}`);
-    } finally {
-      await rest.disconnect();
-    }
-  }
-
   const client = makeClient();
   client.onOrderUpdate(onOrder);
   client.onPositionUpdate(onPosition);
@@ -195,7 +185,7 @@ async function runStrategy(): Promise<void> {
   }
 
   console.log(
-    `Authenticated as user_uuid=${client.userUuid}  (session encrypted, buffer=${STREAM_BUFFER})`,
+    `Authenticated as user_uuid=${client.userUuid}  (Noise XK session, buffer=${STREAM_BUFFER})`,
   );
 
   await client.subscribe(['orders', 'positions']);
@@ -283,10 +273,12 @@ async function runStrategy(): Promise<void> {
   // Pass postOnly: false for the relaxed path, where a crossing leg takes
   // liquidity up to its limit and rests the remainder (the number of taker
   // fills is reported per leg as fillCount).
-  // GDX_BASE anchors the ladder/cross near the live mark (default 64000).
-  const base = Number(process.env.GDX_BASE ?? '64000') || 64_000;
+  // Anchor ladder/cross to live best ask when available; else GDX_BASE.
+  const base =
+    (bestAsk !== null && bestAsk > 0 ? bestAsk : Number(process.env.GDX_BASE ?? '64000')) ||
+    64_000;
   const round1 = (x: number) => Math.round(x * 10) / 10;
-  console.log('Mass-quoting a 3-level BUY ladder (post-only)...');
+  console.log(`Mass-quoting a 3-level BUY ladder (post-only), base=${base.toFixed(2)}...`);
   const ladder: MassQuoteLegInput[] = [
     { side: 'BUY', price: round1(base * (1 - 0.003)), quantity: 0.02 },
     { side: 'BUY', price: round1(base * (1 - 0.006)), quantity: 0.02 },
@@ -328,7 +320,7 @@ async function runStrategy(): Promise<void> {
   }
 
   // Demonstrate the batch-level postOnly flag on a crossing leg.
-  const crossPx = round1(base * 1.02);
+  const crossPx = round1(base * 1.05);
   // postOnly=true: a crossing leg is rejected (would-cross, error_code 2018).
   console.log('Mass-quoting a crossing BUY with postOnly=true (expect rejected/2018)...');
   try {

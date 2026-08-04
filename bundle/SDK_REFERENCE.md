@@ -1,6 +1,6 @@
 # GoDark JavaScript SDK Reference (MM Distribution)
 
-This reference describes the API surface used by the two example scripts shipped in this distribution. They exercise the WebSocket encrypted-trading path via `GodarkClient` plus the public market-data feed via `MarketDataClient`. A separate REST surface (`GodarkRestClient`) is included in the npm tarball under `sdk/` for callers who prefer HTTP, but the bundled examples do not use it.
+This reference describes the API surface used by the two example scripts shipped in this distribution. They exercise the WebSocket encrypted-trading path via `GodarkClient` (Noise XK) plus the public market-data feed via `MarketDataClient`. Encrypted REST trading is not supported — all order flow (place / modify / cancel / mass-quote) runs over the WebSocket client.
 
 Order placement support in this MM distribution is limited to `MARKET` and `LIMIT`.
 
@@ -143,7 +143,7 @@ Note: the SDK accepts additional order types (`PEG_TO_*`) for compatibility with
 | File                                  | What it does                                                                                          |
 |---------------------------------------|-------------------------------------------------------------------------------------------------------|
 | `examples/quickstart.ts`              | Minimal flow: connect → place limit sell → cancel → disconnect                                        |
-| `examples/full-trader-example.ts`     | Reference bot loop: private streams (callbacks + iterator drain), public market data, place / modify / cancel cycle |
+| `examples/full-trader-example.ts`     | Reference bot loop: private streams, market data, place / modify / cancel, mass-quote / batch-cancel |
 | `examples/dotenv.ts`                  | Shared `.env` loader + `OrderError` pretty-printer used by both example mains                         |
 
 Both example scripts run under `tsx` (a TypeScript runner for Node) via the `npm run quickstart` and `npm run full-trader` scripts. To rebuild your own `.ts` against the bundled SDK, `npm run typecheck` exercises a strict `tsc --noEmit` pass.
