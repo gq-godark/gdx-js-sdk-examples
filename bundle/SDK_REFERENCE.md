@@ -1,6 +1,6 @@
 # GoDark JavaScript SDK Reference (MM Distribution)
 
-This reference describes the API surface used by the two example scripts shipped in this distribution. They exercise the WebSocket encrypted-trading path via `GodarkClient` plus the public market-data feed via `MarketDataClient`. A separate REST surface (`GodarkRestClient`) is included in the npm tarball under `sdk/` for callers who prefer HTTP, but the bundled examples do not use it.
+This reference describes the API surface used by the two example scripts shipped in this distribution. They exercise the WebSocket encrypted-trading path via `GodarkClient` (Noise XK) plus the public market-data feed via `MarketDataClient`. Encrypted REST trading is not supported — all order flow (place / modify / cancel / mass-quote) runs over the WebSocket client.
 
 Order placement support in this MM distribution is limited to `MARKET` and `LIMIT`.
 
@@ -36,6 +36,8 @@ The MM examples expect:
 
 - `GODARK_API_KEY_ID` (required)
 - `GODARK_API_SECRET` (required)
+- `GODARK_PASSPHRASE` (required for API key-pair auth)
+- `GDX_NOISE_STATIC_PUBLIC_KEY` (required for encrypted WebSocket trading) — 64 hex chars; aliases `GDX_NOISE_STATIC_PUBKEY`, `GODARK_NOISE_STATIC_PUBLIC_KEY`
 - `GODARK_EDGE_URL` (optional, defaults to `wss://api.godark-dex.com`)
 
 Use `.env.example` as the template for your local `.env`. The OS environment always wins over `.env`.
@@ -49,7 +51,7 @@ Use `.env.example` as the template for your local `.env`. The OS environment alw
 | Method        | Signature                                                   | Purpose                                              |
 |---------------|-------------------------------------------------------------|------------------------------------------------------|
 | constructor   | `new GodarkClient(opts: GodarkClientOptions)`               | Construct the client                                 |
-| `connect`     | `connect(): Promise<void>`                                  | Authenticate + establish encrypted session           |
+| `connect`     | `connect(): Promise<void>`                                  | Authenticate + Noise XK handshake + encrypted session           |
 | `disconnect`  | `disconnect(): Promise<void>`                               | Graceful disconnect                                  |
 | `userUuid`    | `readonly userUuid: string \| undefined`                    | Authenticated user id (populated after `connect`)    |
 
@@ -130,7 +132,7 @@ Note: the SDK accepts additional order types (`PEG_TO_*`) for compatibility with
 `GodarkError` is the base class for every error type the SDK throws. Concrete subclasses (all in the public exports):
 
 - `AuthenticationError` — API key auth failed
-- `SessionError` — ECDH session setup or rekey failed
+- `SessionError` — Noise XK handshake or rekey failed
 - `OrderError` — server rejected the order; carries `errorCode?: string` for the symbolic reason (e.g. `'PRICE_DEVIATION_TOO_LARGE'`, `'MARGIN_INSUFFICIENT'`). The shared `examples/dotenv.ts` has a `printOrderError(op, err)` helper that surfaces this.
 - `ConnectionError` — WebSocket transport failure
 - `EncryptionError` — AES-GCM encrypt / decrypt failed
@@ -141,7 +143,7 @@ Note: the SDK accepts additional order types (`PEG_TO_*`) for compatibility with
 | File                                  | What it does                                                                                          |
 |---------------------------------------|-------------------------------------------------------------------------------------------------------|
 | `examples/quickstart.ts`              | Minimal flow: connect → place limit sell → cancel → disconnect                                        |
-| `examples/full-trader-example.ts`     | Reference bot loop: private streams (callbacks + iterator drain), public market data, place / modify / cancel cycle |
+| `examples/full-trader-example.ts`     | Reference bot loop: private streams, market data, place / modify / cancel, mass-quote / batch-cancel |
 | `examples/dotenv.ts`                  | Shared `.env` loader + `OrderError` pretty-printer used by both example mains                         |
 
 Both example scripts run under `tsx` (a TypeScript runner for Node) via the `npm run quickstart` and `npm run full-trader` scripts. To rebuild your own `.ts` against the bundled SDK, `npm run typecheck` exercises a strict `tsc --noEmit` pass.

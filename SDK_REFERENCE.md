@@ -4,7 +4,7 @@ This is the comprehensive reference for maintainers and developers working *insi
 
 A trimmed, recipient-facing copy is maintained at [`bundle/SDK_REFERENCE.md`](bundle/SDK_REFERENCE.md) and is the one copied into the root of released ZIP bundles as `SDK_REFERENCE.md`. The bundle version intentionally omits sections that recipients don't need (refresh / parity / pin discipline, error-code internals, forward-compat strategy, SDK sourcing options).
 
-> Scope: the MM examples use **WebSocket encrypted trading** via `GodarkClient` plus the public **market-data** feed via `MarketDataClient`. A separate REST surface (`GodarkRestClient`) is included in the npm tarball for callers who prefer HTTP but is not exercised by the bundled examples. Order placement support is limited to `MARKET` and `LIMIT`.
+> Scope: the MM examples use **WebSocket encrypted trading** via `GodarkClient` plus the public **market-data** feed via `MarketDataClient`. Encrypted REST trading is not supported — all order flow (place / modify / cancel / mass-quote) runs over the Noise XK WebSocket client. Order placement support is limited to `MARKET` and `LIMIT`.
 
 ## Quick Start
 
@@ -40,6 +40,7 @@ The MM examples expect:
 - `GODARK_API_KEY_ID` (required)
 - `GODARK_API_SECRET` (required)
 - `GODARK_PASSPHRASE` (required for API key-pair auth)
+- `GDX_NOISE_STATIC_PUBLIC_KEY` (required for encrypted WebSocket trading) — sequencer static X25519 public key (64 hex chars). Aliases: `GDX_NOISE_STATIC_PUBKEY`, `GODARK_NOISE_STATIC_PUBLIC_KEY`. Or set `noiseStaticPublicKeyHex` on `GodarkClientOptions`.
 - `GODARK_EDGE_URL` (optional, defaults to `wss://api.godark-dex.com`)
 
 Use `.env.example` as the template for your local `.env`. The shared helper `examples/dotenv.ts` (`loadDotenv` + `printOrderError`) is reused by both example scripts.
@@ -82,7 +83,7 @@ To consume `@godark/sdk` from your own project outside this repo:
 | Method       | Signature                                                       | Purpose                                       |
 |--------------|-----------------------------------------------------------------|-----------------------------------------------|
 | constructor  | `new GodarkClient(opts: GodarkClientOptions)`                   | Construct the client                          |
-| `connect`    | `connect(): Promise<void>`                                      | Authenticate + establish encrypted session    |
+| `connect`    | `connect(): Promise<void>`                                      | Authenticate + Noise XK handshake + encrypted session |
 | `disconnect` | `disconnect(): Promise<void>`                                   | Graceful disconnect                           |
 | `userUuid`   | `readonly userUuid: string \| undefined`                        | Authenticated user id (set after `connect`)   |
 
@@ -92,6 +93,8 @@ To consume `@godark/sdk` from your own project outside this repo:
 |---------------|-----------------------------------------------------------------------------------------------------------------------|------------------------------------------|
 | `placeOrder`  | `placeOrder(opts: PlaceOrderOptions) -> Promise<OrderAck>`                                                            | Encrypted order placement                |
 | `cancelOrder` | `cancelOrder(orderId: string, symbol: string) -> Promise<OrderAck>`                                                   | Cancel an open order                     |
+| `massQuote`  | `massQuote(symbol, legs, leverage?, postOnly?): Promise<MassQuoteAck>` | Bulk cancel-replace ladder |
+| `batchCancel` | `batchCancel(symbol, orderIds): Promise<BatchCancelAck>` | Cancel multiple resting orders |
 | `modifyOrder` | `modifyOrder(orderId: string, symbol: string, opts: ModifyOrderOptions) -> Promise<OrderAck>`                         | Modify an open order's price / quantity  |
 
 ### Subscriptions
@@ -150,7 +153,7 @@ The same `TransportOptions` shape used by `GodarkClient` is accepted by the `Mar
 
 ## GodarkRestClient (HTTP path, not exercised by the bundled examples)
 
-`GodarkRestClient` provides an encrypted **REST** path that mirrors the WebSocket trading surface (`placeOrder`, `cancelOrder`). It is fully exported from the npm tarball; the examples shipped in this distribution only exercise the WebSocket path. Refer to the upstream `gdx-js-sdk` README for the REST flow.
+`GodarkRestClient` remains exported from the npm tarball for identity/balance helpers, but encrypted REST trading is not supported — place / modify / cancel / mass-quote must use `GodarkClient` over Noise XK WebSocket.
 
 ## Core Types
 
@@ -211,7 +214,7 @@ Note: the SDK additionally exposes parallel `*_FROM_PROTO` / `*_TO_PROTO` lookup
 | Class                  | When                                                                                       |
 |------------------------|--------------------------------------------------------------------------------------------|
 | `AuthenticationError`  | API key rejection at session bring-up                                                      |
-| `SessionError`         | ECDH session setup or rekey failed                                                         |
+| `SessionError`         | Noise XK handshake or rekey failed                                                         |
 | `OrderError`           | Order rejected by the sequencer; carries `errorCode?: string` (symbolic reason)            |
 | `ConnectionError`      | WebSocket transport failure                                                                |
 | `EncryptionError`      | AES-GCM encrypt / decrypt failure                                                          |
@@ -253,7 +256,7 @@ The `OrderError.errorCode` field already carries the symbolic string for thrown 
 | File                                     | Purpose                                                                                           |
 |------------------------------------------|---------------------------------------------------------------------------------------------------|
 | `examples/quickstart.ts`                 | Minimal connect, place, cancel                                                                    |
-| `examples/full-trader-example.ts`        | Reference bot flow with private streams (callbacks + iterator drain), market data, place/modify/cancel cycle |
+| `examples/full-trader-example.ts`        | Reference bot flow: private streams, market data, place / modify / cancel, mass-quote / batch-cancel |
 | `examples/dotenv.ts`                     | Shared helper (`loadDotenv` + `printOrderError`)                                                  |
 
 ## SDK source layout (vendored)

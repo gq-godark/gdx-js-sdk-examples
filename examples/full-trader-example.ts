@@ -7,13 +7,14 @@
  *   GDX_EDGE_URL / GODARK_EDGE_URL (default wss://api.godark-dex.com)
  *   GDX_API_KEY_ID / GODARK_API_KEY_ID, GDX_API_SECRET / GODARK_API_SECRET
  *   GDX_PASSPHRASE / GODARK_PASSPHRASE
+ *   GDX_NOISE_STATIC_PUBLIC_KEY (required for Noise XK)
  *   GDX_TLS_SKIP_VERIFY / GODARK_TLS_SKIP_VERIFY
  */
 import {
   GodarkClient,
   GodarkError,
-  GodarkRestClient,
   MarketDataClient,
+  type MassQuoteLegInput,
   type OrderAck,
   type OrderUpdate,
   type PositionUpdate,
@@ -118,11 +119,16 @@ function makeClient(): GodarkClient {
   const kid = envFirst(['GDX_API_KEY_ID', 'GODARK_API_KEY_ID'], DEFAULT_API_KEY_ID);
   const secret = envFirst(['GDX_API_SECRET', 'GODARK_API_SECRET'], DEFAULT_API_SECRET);
   const passphrase = envFirst(['GDX_PASSPHRASE', 'GODARK_PASSPHRASE'], DEFAULT_API_PASSPHRASE);
+  const noisePin = envFirst(
+    ['GDX_NOISE_STATIC_PUBLIC_KEY', 'GDX_NOISE_STATIC_PUBKEY', 'GODARK_NOISE_STATIC_PUBLIC_KEY'],
+    '',
+  );
   return new GodarkClient({
     apiKeyId: kid,
     apiSecret: secret,
     passphrase,
     baseUrl: EDGE_URL,
+    noiseStaticPublicKeyHex: noisePin || undefined,
     transportOptions,
     streamBufferSize: STREAM_BUFFER,
     autoReconnect: true,
@@ -162,21 +168,6 @@ async function runStrategy(): Promise<void> {
     `Endpoint: ${EDGE_URL}  (TLS skip verify=${tlsSkip ? 'true' : 'false'})`,
   );
 
-  {
-    const rest = new GodarkRestClient({
-      apiKeyId: envFirst(['GDX_API_KEY_ID', 'GODARK_API_KEY_ID'], DEFAULT_API_KEY_ID),
-      apiSecret: envFirst(['GDX_API_SECRET', 'GODARK_API_SECRET'], DEFAULT_API_SECRET),
-      passphrase: envFirst(['GDX_PASSPHRASE', 'GODARK_PASSPHRASE'], DEFAULT_API_PASSPHRASE),
-    });
-    await rest.connect();
-    try {
-      const bal = await rest.getMyBalance();
-      console.log(`Balance: shielded_raw=${bal.shieldedBalanceRaw.toString()}`);
-    } finally {
-      await rest.disconnect();
-    }
-  }
-
   const client = makeClient();
   client.onOrderUpdate(onOrder);
   client.onPositionUpdate(onPosition);
@@ -194,7 +185,7 @@ async function runStrategy(): Promise<void> {
   }
 
   console.log(
-    `Authenticated as user_uuid=${client.userUuid}  (session encrypted, buffer=${STREAM_BUFFER})`,
+    `Authenticated as user_uuid=${client.userUuid}  (Noise XK session, buffer=${STREAM_BUFFER})`,
   );
 
   await client.subscribe(['orders', 'positions']);
@@ -274,6 +265,114 @@ async function runStrategy(): Promise<void> {
   console.log('Draining any remaining queued updates (short window)...');
   const drained = await drainOrderUpdatesForMs(client, 400);
   console.log(`Drained ${drained} queued order update(s)`);
+
+  // --- Bulk quote (mass quote) ---
+  // Place a whole ladder of resting quotes in one batched request. Leaving
+  // postOnly undefined (or true) keeps post-only behaviour: a leg that would
+  // cross is rejected as "failed" so the batch fuses into a single MPC round.
+  // Pass postOnly: false for the relaxed path, where a crossing leg takes
+  // liquidity up to its limit and rests the remainder (the number of taker
+  // fills is reported per leg as fillCount).
+  // Anchor ladder/cross to live best ask when available; else GDX_BASE.
+  const base =
+    (bestAsk !== null && bestAsk > 0 ? bestAsk : Number(process.env.GDX_BASE ?? '64000')) ||
+    64_000;
+  const round1 = (x: number) => Math.round(x * 10) / 10;
+  console.log(`Mass-quoting a 3-level BUY ladder (post-only), base=${base.toFixed(2)}...`);
+  const ladder: MassQuoteLegInput[] = [
+    { side: 'BUY', price: round1(base * (1 - 0.003)), quantity: 0.02 },
+    { side: 'BUY', price: round1(base * (1 - 0.006)), quantity: 0.02 },
+    { side: 'BUY', price: round1(base * (1 - 0.009)), quantity: 0.02 },
+  ];
+  const restingIds: string[] = [];
+  try {
+    const mq = await client.massQuote(SYMBOL, ladder, 1);
+    console.log(
+      `Mass quote: success=${mq.success} sequence=${mq.sequence} legs=${mq.results.length}`,
+    );
+    for (const r of mq.results) {
+      console.log(
+        `  leg ${r.legIndex}: status=${r.status} new_order_id=${r.newOrderId ?? '-'} fills=${r.fillCount} err=${r.errorCode ?? '-'}`,
+      );
+      if (r.status === 'open' && r.newOrderId) restingIds.push(r.newOrderId);
+    }
+  } catch (e: unknown) {
+    printOrderError('MASS QUOTE', e);
+  }
+
+  await new Promise((r) => setTimeout(r, 1000));
+
+  if (restingIds.length > 0) {
+    console.log(
+      `Batch-cancelling ${restingIds.length} ladder orders (cleanup)...`,
+    );
+    try {
+      const bc = await client.batchCancel(SYMBOL, restingIds);
+      for (const r of bc.results) {
+        console.log(
+          `  cancel id=${r.orderId}: cancelled=${r.cancelled} err=${r.errorCode ?? '-'}`,
+        );
+      }
+    } catch (e: unknown) {
+      printOrderError('BATCH CANCEL', e);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
+  // Demonstrate the batch-level postOnly flag on a crossing leg.
+  const crossPx = round1(base * 1.05);
+  // postOnly=true: a crossing leg is rejected (would-cross, error_code 2018).
+  console.log('Mass-quoting a crossing BUY with postOnly=true (expect rejected/2018)...');
+  try {
+    const mq = await client.massQuote(
+      SYMBOL,
+      [{ side: 'BUY', price: crossPx, quantity: 0.001 }],
+      1,
+      true,
+    );
+    for (const r of mq.results) {
+      console.log(`  leg ${r.legIndex}: status=${r.status} err=${r.errorCode ?? '-'} fills=${r.fillCount}`);
+    }
+  } catch (e: unknown) {
+    printOrderError('MASS QUOTE postOnly=true', e);
+  }
+  await new Promise((r) => setTimeout(r, 500));
+
+  // postOnly=false (relaxed): crossing leg takes liquidity, then rests remainder.
+  console.log('Mass-quoting a crossing BUY with postOnly=false (expect filled, fills>0)...');
+  // The relaxed leg may rest a remainder after taking liquidity; track its id so
+  // it gets cleaned up below instead of leaking onto the book.
+  const strayIds: string[] = [];
+  try {
+    const mq = await client.massQuote(
+      SYMBOL,
+      [{ side: 'BUY', price: crossPx, quantity: 0.003 }],
+      1,
+      false,
+    );
+    for (const r of mq.results) {
+      console.log(
+        `  leg ${r.legIndex}: status=${r.status} new_order_id=${r.newOrderId ?? '-'} err=${r.errorCode ?? '-'} fills=${r.fillCount}`,
+      );
+      if (r.status === 'open' && r.newOrderId) strayIds.push(r.newOrderId);
+    }
+  } catch (e: unknown) {
+    printOrderError('MASS QUOTE postOnly=false', e);
+  }
+  await new Promise((r) => setTimeout(r, 1000));
+
+  if (strayIds.length > 0) {
+    console.log(`Batch-cancelling ${strayIds.length} relaxed-leg remainder(s) (cleanup)...`);
+    try {
+      const bc = await client.batchCancel(SYMBOL, strayIds);
+      for (const r of bc.results) {
+        console.log(`  cancel id=${r.orderId}: cancelled=${r.cancelled} err=${r.errorCode ?? '-'}`);
+      }
+    } catch (e: unknown) {
+      printOrderError('BATCH CANCEL (remainder)', e);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
 
   console.log('Cancelling original BUY (cleanup)...');
   try {

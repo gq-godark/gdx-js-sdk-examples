@@ -34,6 +34,8 @@ Copy `.env.example` to `.env` and set:
 
 - `GODARK_API_KEY_ID`
 - `GODARK_API_SECRET`
+- `GODARK_PASSPHRASE`
+- `GDX_NOISE_STATIC_PUBLIC_KEY` (64 hex chars; aliases `GDX_NOISE_STATIC_PUBKEY`, `GODARK_NOISE_STATIC_PUBLIC_KEY`)
 
 ```bash
 cp .env.example .env
@@ -58,7 +60,7 @@ Available scripts (see `package.json`):
 | Script                    | Source                              | What it does                                                                    |
 |---------------------------|-------------------------------------|---------------------------------------------------------------------------------|
 | `npm run quickstart`      | `examples/quickstart.ts`            | Minimal connect → far limit sell → cancel                                       |
-| `npm run full-trader`     | `examples/full-trader-example.ts`   | Reference bot loop: callbacks, market-data client, place/modify/cancel, drain   |
+| `npm run full-trader`     | `examples/full-trader-example.ts`   | Reference bot loop: callbacks, market data, place/modify/cancel, mass-quote / batch-cancel |
 | `npm run typecheck`       | (all)                               | `tsc --noEmit` — catches API drift after editing your own scripts               |
 
 ## npm integration (your own bot)

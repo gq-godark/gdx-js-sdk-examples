@@ -7,6 +7,7 @@
  *
  * Environment:
  *   GODARK_API_KEY_ID, GODARK_API_SECRET, GODARK_PASSPHRASE
+ *   GDX_NOISE_STATIC_PUBLIC_KEY (required for encrypted WS)
  *   GODARK_EDGE_URL (optional; default wss://api.godark-dex.com)
  */
 import { GodarkClient } from '@godark/sdk';
