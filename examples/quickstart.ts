@@ -41,6 +41,9 @@ async function main(): Promise<void> {
     await client.connect();
     console.log(`Connected as user ${client.userUuid}`);
 
+    // Book confirmation waits on private order updates; subscribe first.
+    await client.subscribe(['orders']);
+
     const ack = await client.placeOrder({
       symbol: SYMBOL,
       side: 'SELL',

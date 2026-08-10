@@ -84,7 +84,7 @@ npm run full-trader
 
 | Sample                | Source                              | Purpose                                                                                                                              |
 |-----------------------|-------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------|
-| `quickstart`          | `examples/quickstart.ts`            | Minimal connect → LIMIT sell far from touch → cancel; surfaces the symbolic `OrderError.errorCode` reason on rejection               |
+| `quickstart`          | `examples/quickstart.ts`            | Minimal connect → `subscribe(['orders'])` → LIMIT sell far from touch → cancel (book confirmation needs the private orders channel) |
 | `full-trader-example` | `examples/full-trader-example.ts`   | Reference bot flow: private streams, market data, place / modify / cancel, mass-quote / batch-cancel, queue drain |
 
 Order-type support in this MM distribution is limited to **`MARKET`** and **`LIMIT`**.
