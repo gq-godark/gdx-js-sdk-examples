@@ -7,10 +7,10 @@
  *
  * Environment:
  *   GODARK_API_KEY_ID, GODARK_API_SECRET, GODARK_PASSPHRASE
- *   GDX_NOISE_STATIC_PUBLIC_KEY (required for encrypted WS)
- *   GODARK_EDGE_URL (optional; default wss://api.godark-dex.com)
+ *   GODARK_EDGE_URL (optional; default Environment.Testnet)
+ *   GDX_NOISE_STATIC_PUBLIC_KEY (optional override; baked into Testnet)
  */
-import { GodarkClient } from '@godark/sdk';
+import { Environment, GodarkClient } from '@godark/sdk';
 
 import { loadDotenv, printOrderError } from './dotenv.js';
 
@@ -28,10 +28,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const edge = process.env.GODARK_EDGE_URL?.trim() || process.env.GDX_EDGE_URL?.trim();
   const client = new GodarkClient({
     apiKeyId,
     apiSecret,
     passphrase,
+    environment: Environment.Testnet,
+    ...(edge ? { baseUrl: edge } : {}),
   });
 
   try {
