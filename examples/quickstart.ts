@@ -41,6 +41,9 @@ async function main(): Promise<void> {
     await client.connect();
     console.log(`Connected as user ${client.userUuid}`);
 
+    // Book confirmation waits on private order updates; subscribe first.
+    await client.subscribe(['orders']);
+
     const ack = await client.placeOrder({
       symbol: SYMBOL,
       side: 'SELL',
@@ -49,6 +52,9 @@ async function main(): Promise<void> {
       quantity: 0.01,
     });
     console.log(`Place OK -- order_id=${ack.orderId}`);
+
+    // Allow the resting order to settle before cancel (avoids CANCEL_TOO_SOON).
+    await new Promise((r) => setTimeout(r, 500));
 
     const cancel = await client.cancelOrder(ack.orderId, SYMBOL);
     console.log(`Cancel OK -- order_id=${cancel.orderId}`);
