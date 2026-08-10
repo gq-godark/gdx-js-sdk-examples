@@ -4,13 +4,14 @@
  *   npm run full-trader
  *
  * Environment (optional overrides):
- *   GDX_EDGE_URL / GODARK_EDGE_URL (default wss://api.godark-dex.com)
+ *   GDX_EDGE_URL / GODARK_EDGE_URL (default Environment.Testnet)
  *   GDX_API_KEY_ID / GODARK_API_KEY_ID, GDX_API_SECRET / GODARK_API_SECRET
  *   GDX_PASSPHRASE / GODARK_PASSPHRASE
- *   GDX_NOISE_STATIC_PUBLIC_KEY (required for Noise XK)
+ *   GDX_NOISE_STATIC_PUBLIC_KEY (optional; Testnet pin is baked in)
  *   GDX_TLS_SKIP_VERIFY / GODARK_TLS_SKIP_VERIFY
  */
 import {
+  Environment,
   GodarkClient,
   GodarkError,
   MarketDataClient,
@@ -51,10 +52,9 @@ function envTruthy(names: readonly string[]): boolean {
   return false;
 }
 
-const EDGE_URL = envFirst(
-  ['GDX_EDGE_URL', 'GODARK_EDGE_URL'],
-  'wss://api.godark-dex.com',
-);
+const EDGE_OVERRIDE = envFirst(['GDX_EDGE_URL', 'GODARK_EDGE_URL'], '');
+/** Resolved edge for logging / market-data (Testnet default when unset). */
+const EDGE_URL = EDGE_OVERRIDE || 'wss://api.godark-dex.com';
 
 const tlsSkip = envTruthy(['GDX_TLS_SKIP_VERIFY', 'GODARK_TLS_SKIP_VERIFY']);
 
@@ -127,8 +127,9 @@ function makeClient(): GodarkClient {
     apiKeyId: kid,
     apiSecret: secret,
     passphrase,
-    baseUrl: EDGE_URL,
-    noiseStaticPublicKeyHex: noisePin || undefined,
+    environment: Environment.Testnet,
+    ...(EDGE_OVERRIDE ? { baseUrl: EDGE_OVERRIDE } : {}),
+    ...(noisePin ? { noiseStaticPublicKeyHex: noisePin } : {}),
     transportOptions,
     streamBufferSize: STREAM_BUFFER,
     autoReconnect: true,
