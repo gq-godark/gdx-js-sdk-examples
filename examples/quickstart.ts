@@ -7,28 +7,29 @@
  *
  * Environment:
  *   GODARK_API_KEY_ID, GODARK_API_SECRET, GODARK_PASSPHRASE
+ *   (legacy GDX_* aliases accepted when GODARK_* is unset)
  *   GODARK_EDGE_URL (optional; default Environment.Testnet)
- *   GDX_NOISE_STATIC_PUBLIC_KEY (optional override; baked into Testnet)
+ *   GODARK_NOISE_STATIC_PUBLIC_KEY (optional override; baked into Testnet)
  */
 import { Environment, GodarkClient } from '@godark/sdk';
 
-import { loadDotenv, printOrderError } from './dotenv.js';
+import { envFirst, loadDotenv, printOrderError } from './dotenv.js';
 
 const SYMBOL = 'BTC-USDC-PERP';
 
 async function main(): Promise<void> {
   loadDotenv();
 
-  const apiKeyId = process.env.GODARK_API_KEY_ID?.trim();
-  const apiSecret = process.env.GODARK_API_SECRET?.trim();
-  const passphrase = process.env.GODARK_PASSPHRASE?.trim();
+  const apiKeyId = envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID']);
+  const apiSecret = envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET']);
+  const passphrase = envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE']);
 
   if (!apiKeyId || !apiSecret || !passphrase) {
     console.error('Set GODARK_API_KEY_ID, GODARK_API_SECRET and GODARK_PASSPHRASE');
     process.exit(1);
   }
 
-  const edge = process.env.GODARK_EDGE_URL?.trim() || process.env.GDX_EDGE_URL?.trim();
+  const edge = envFirst(['GODARK_EDGE_URL', 'GDX_EDGE_URL']);
   const client = new GodarkClient({
     apiKeyId,
     apiSecret,
@@ -48,7 +49,7 @@ async function main(): Promise<void> {
       symbol: SYMBOL,
       side: 'SELL',
       orderType: 'LIMIT',
-      price: 999_999,
+      price: 69515.2,
       quantity: 0.01,
     });
     console.log(`Place OK -- order_id=${ack.orderId}`);
