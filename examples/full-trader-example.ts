@@ -206,6 +206,18 @@ async function runStrategy(): Promise<void> {
     console.warn('Market data unavailable (continuing without):', e);
   }
 
+  // Leverage is per-symbol account state (not a placeOrder/massQuote field).
+  console.log('Setting leverage to 1 via updateLeverage...');
+  try {
+    const levAck = await client.updateLeverage(SYMBOL, 1);
+    console.log(`updateLeverage: success=${levAck.success} order_id=${levAck.orderId}`);
+  } catch (e: unknown) {
+    printOrderError('updateLeverage', e);
+    await md.disconnect().catch(() => {});
+    await client.disconnect();
+    return;
+  }
+
   console.log('Placing limit BUY...');
   let buyAck: OrderAck;
   try {
@@ -287,7 +299,7 @@ async function runStrategy(): Promise<void> {
   ];
   const restingIds: string[] = [];
   try {
-    const mq = await client.massQuote(SYMBOL, ladder, 1);
+    const mq = await client.massQuote(SYMBOL, ladder);
     console.log(
       `Mass quote: success=${mq.success} sequence=${mq.sequence} legs=${mq.results.length}`,
     );
@@ -328,7 +340,6 @@ async function runStrategy(): Promise<void> {
     const mq = await client.massQuote(
       SYMBOL,
       [{ side: 'BUY', price: crossPx, quantity: 0.001 }],
-      1,
       true,
     );
     for (const r of mq.results) {
@@ -348,7 +359,6 @@ async function runStrategy(): Promise<void> {
     const mq = await client.massQuote(
       SYMBOL,
       [{ side: 'BUY', price: crossPx, quantity: 0.003 }],
-      1,
       false,
     );
     for (const r of mq.results) {
