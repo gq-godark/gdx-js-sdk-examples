@@ -63,6 +63,7 @@ cp .env.example .env
 npm install              # hydrates devDeps + the vendored @godark/sdk
 npm run quickstart       # examples/quickstart.ts
 npm run full-trader      # examples/full-trader-example.ts
+npm run rest-client      # examples/rest-client-example.ts
 ```
 
 `@godark/sdk` is resolved via `file:./sdk/godark-sdk-<version>.tgz`, so `npm install` only needs the public npm registry for the small dev-dependency set (`tsx`, `typescript`, `@types/node`).
@@ -86,6 +87,7 @@ npm run full-trader
 |-----------------------|-------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------|
 | `quickstart`          | `examples/quickstart.ts`            | Minimal connect → `subscribe(['orders'])` → LIMIT sell far from touch → cancel (book confirmation needs the private orders channel) |
 | `full-trader-example` | `examples/full-trader-example.ts`   | Reference bot flow: private streams, market data, place / modify / cancel, mass-quote / batch-cancel, queue drain |
+| `rest-client-example` | `examples/rest-client-example.ts`   | Residual HTTP: public GETs, auth, me / leverage / balance, Noise XK note |
 
 Order-type support in this MM distribution is limited to **`MARKET`** and **`LIMIT`**.
 

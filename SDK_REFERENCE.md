@@ -309,3 +309,7 @@ The full upstream-change chain (proto → SDK → examples → release zip):
 2. `gdx-js-sdk/.github/workflows/auto-regen-protos.yml` regenerates the committed proto bindings and opens a rolling PR. Merging it dispatches `gdx-sdk-changed` to **this** repo.
 3. `.github/workflows/auto-bump-sdk-pin.yml` here refreshes `sdk/`, bumps `sdk/UPSTREAM_REF`, refreshes `package-lock.json`, and opens its own rolling PR.
 4. Merging that PR triggers `release.yml`, which rebuilds the bundle zip from the new pin and publishes a tagged GitHub Release.
+
+## RestClient example
+
+`GodarkRestClient` is exercised by `rest_client_example` / `rest-client-example`: REST auth, `/auth/me`, leverage read, and public funding/OI/volume GETs. Encrypted place/cancel/modify/update-leverage remain WebSocket-only via `GodarkClient`.
