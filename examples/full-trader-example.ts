@@ -3,12 +3,12 @@
  *
  *   npm run full-trader
  *
- * Environment (optional overrides):
- *   GDX_EDGE_URL / GODARK_EDGE_URL (default Environment.Testnet)
- *   GDX_API_KEY_ID / GODARK_API_KEY_ID, GDX_API_SECRET / GODARK_API_SECRET
- *   GDX_PASSPHRASE / GODARK_PASSPHRASE
- *   GDX_NOISE_STATIC_PUBLIC_KEY (optional; Testnet pin is baked in)
- *   GDX_TLS_SKIP_VERIFY / GODARK_TLS_SKIP_VERIFY
+ * Environment (optional overrides; GODARK_* first, then GDX_*):
+ *   GODARK_EDGE_URL / GDX_EDGE_URL (default Environment.Testnet)
+ *   GODARK_API_KEY_ID / GDX_API_KEY_ID, GODARK_API_SECRET / GDX_API_SECRET
+ *   GODARK_PASSPHRASE / GDX_PASSPHRASE
+ *   GODARK_NOISE_STATIC_PUBLIC_KEY (optional; Testnet pin is baked in)
+ *   GODARK_TLS_SKIP_VERIFY / GDX_TLS_SKIP_VERIFY
  */
 import {
   Environment,
@@ -22,7 +22,9 @@ import {
   type TransportOptions,
 } from '@godark/sdk';
 
-import { loadDotenv, printOrderError } from './dotenv.js';
+import { envFirst, loadDotenv, printOrderError } from './dotenv.js';
+
+loadDotenv();
 
 const SYMBOL = 'BTC-USDC-PERP';
 const STREAM_BUFFER = 256;
@@ -31,32 +33,16 @@ const DEFAULT_API_KEY_ID = 'YOUR_API_KEY_ID';
 const DEFAULT_API_SECRET = 'YOUR_API_SECRET';
 const DEFAULT_API_PASSPHRASE = 'YOUR_API_PASSPHRASE';
 
-function envFirst(
-  names: readonly string[],
-  fallback: string,
-): string {
-  for (const n of names) {
-    const v = process.env[n]?.trim();
-    if (v) return v;
-  }
-  return fallback;
-}
-
 function envTruthy(names: readonly string[]): boolean {
-  for (const n of names) {
-    const v = process.env[n]?.trim();
-    if (!v) continue;
-    const s = v.toLowerCase();
-    if (s === '1' || s === 'true' || s === 'yes' || s === 'on') return true;
-  }
-  return false;
+  const v = envFirst(names, '').toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
 }
 
-const EDGE_OVERRIDE = envFirst(['GDX_EDGE_URL', 'GODARK_EDGE_URL'], '');
+const EDGE_OVERRIDE = envFirst(['GODARK_EDGE_URL', 'GDX_EDGE_URL'], '');
 /** Resolved edge for logging / market-data (Testnet default when unset). */
 const EDGE_URL = EDGE_OVERRIDE || 'wss://api.godark-dex.com';
 
-const tlsSkip = envTruthy(['GDX_TLS_SKIP_VERIFY', 'GODARK_TLS_SKIP_VERIFY']);
+const tlsSkip = envTruthy(['GODARK_TLS_SKIP_VERIFY', 'GDX_TLS_SKIP_VERIFY']);
 
 const transportOptions: TransportOptions = {
   headers: { 'X-Trader-Tag': 'js-full-trader-demo' },
@@ -116,11 +102,11 @@ function onTrade(msg: Record<string, unknown>): void {
 }
 
 function makeClient(): GodarkClient {
-  const kid = envFirst(['GDX_API_KEY_ID', 'GODARK_API_KEY_ID'], DEFAULT_API_KEY_ID);
-  const secret = envFirst(['GDX_API_SECRET', 'GODARK_API_SECRET'], DEFAULT_API_SECRET);
-  const passphrase = envFirst(['GDX_PASSPHRASE', 'GODARK_PASSPHRASE'], DEFAULT_API_PASSPHRASE);
+  const kid = envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID'], DEFAULT_API_KEY_ID);
+  const secret = envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET'], DEFAULT_API_SECRET);
+  const passphrase = envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE'], DEFAULT_API_PASSPHRASE);
   const noisePin = envFirst(
-    ['GDX_NOISE_STATIC_PUBLIC_KEY', 'GDX_NOISE_STATIC_PUBKEY', 'GODARK_NOISE_STATIC_PUBLIC_KEY'],
+    ['GODARK_NOISE_STATIC_PUBLIC_KEY', 'GDX_NOISE_STATIC_PUBLIC_KEY', 'GDX_NOISE_STATIC_PUBKEY'],
     '',
   );
   return new GodarkClient({
@@ -160,7 +146,6 @@ async function drainOrderUpdatesForMs(
 }
 
 async function runStrategy(): Promise<void> {
-  loadDotenv();
 
   console.log('='.repeat(60));
   console.log('  GoDark SDK — Complete Trader Example');

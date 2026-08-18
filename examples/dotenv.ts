@@ -14,7 +14,45 @@ import { fileURLToPath } from 'node:url';
 
 import { OrderError } from '@godark/sdk';
 
+/** Keys that were non-blank in the real process env before `.env` merge. */
+const osPresent = new Set<string>();
+const fileVals = new Map<string, string>();
+let osSnapshotted = false;
+
+function nonempty(v: string | undefined): string {
+  return v?.trim() ?? '';
+}
+
+/** OS `GODARK_*` then OS `GDX_*`, then the same order from `.env`. */
+export function envFirst(names: readonly string[], fallback = ''): string {
+  if (osSnapshotted) {
+    for (const n of names) {
+      if (osPresent.has(n)) {
+        const v = nonempty(process.env[n]);
+        if (v) return v;
+      }
+    }
+    for (const n of names) {
+      const v = nonempty(fileVals.get(n));
+      if (v) return v;
+    }
+    return fallback;
+  }
+  for (const n of names) {
+    const v = nonempty(process.env[n]);
+    if (v) return v;
+  }
+  return fallback;
+}
+
 export function loadDotenv(): void {
+  if (osSnapshotted) return;
+  osPresent.clear();
+  fileVals.clear();
+  for (const [k, v] of Object.entries(process.env)) {
+    if (nonempty(v)) osPresent.add(k);
+  }
+  osSnapshotted = true;
   const here = dirname(fileURLToPath(import.meta.url));
   const path = resolve(here, '..', '.env');
   let text: string;
@@ -35,7 +73,9 @@ export function loadDotenv(): void {
     ) {
       val = val.slice(1, -1);
     }
-    if (key && process.env[key] === undefined) {
+    if (!key) continue;
+    fileVals.set(key, val);
+    if (process.env[key] === undefined) {
       process.env[key] = val;
     }
   }
