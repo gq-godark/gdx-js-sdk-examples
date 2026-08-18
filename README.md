@@ -62,7 +62,8 @@ cp .env.example .env
 
 npm install              # hydrates devDeps + the vendored @godark/sdk
 npm run quickstart       # examples/quickstart.ts
-npm run full-trader      # examples/full-trader-example.ts
+npm run full-trader
+npm run rest-client      # examples/full-trader-example.ts
 ```
 
 `@godark/sdk` is resolved via `file:./sdk/godark-sdk-<version>.tgz`, so `npm install` only needs the public npm registry for the small dev-dependency set (`tsx`, `typescript`, `@types/node`).

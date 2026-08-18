@@ -92,8 +92,9 @@ To consume `@godark/sdk` from your own project outside this repo:
 | Method        | Signature (abridged)                                                                                                  | Purpose                                  |
 |---------------|-----------------------------------------------------------------------------------------------------------------------|------------------------------------------|
 | `placeOrder`  | `placeOrder(opts: PlaceOrderOptions) -> Promise<OrderAck>`                                                            | Encrypted order placement                |
+| `updateLeverage` | `updateLeverage(symbol: string, leverage: number) -> Promise<OrderAck>`                                            | Set per-symbol account leverage          |
 | `cancelOrder` | `cancelOrder(orderId: string, symbol: string) -> Promise<OrderAck>`                                                   | Cancel an open order                     |
-| `massQuote`  | `massQuote(symbol, legs, leverage?, postOnly?): Promise<MassQuoteAck>` | Bulk cancel-replace ladder |
+| `massQuote`  | `massQuote(symbol, legs, postOnly?): Promise<MassQuoteAck>` | Bulk cancel-replace ladder |
 | `batchCancel` | `batchCancel(symbol, orderIds): Promise<BatchCancelAck>` | Cancel multiple resting orders |
 | `modifyOrder` | `modifyOrder(orderId: string, symbol: string, opts: ModifyOrderOptions) -> Promise<OrderAck>`                         | Modify an open order's price / quantity  |
 
@@ -308,3 +309,7 @@ The full upstream-change chain (proto → SDK → examples → release zip):
 2. `gdx-js-sdk/.github/workflows/auto-regen-protos.yml` regenerates the committed proto bindings and opens a rolling PR. Merging it dispatches `gdx-sdk-changed` to **this** repo.
 3. `.github/workflows/auto-bump-sdk-pin.yml` here refreshes `sdk/`, bumps `sdk/UPSTREAM_REF`, refreshes `package-lock.json`, and opens its own rolling PR.
 4. Merging that PR triggers `release.yml`, which rebuilds the bundle zip from the new pin and publishes a tagged GitHub Release.
+
+## RestClient example
+
+`GodarkRestClient` is exercised by `rest_client_example` / `rest-client-example`: REST auth, `/auth/me`, leverage read, and public funding/OI/volume GETs. Encrypted place/cancel/modify/update-leverage remain WebSocket-only via `GodarkClient`.
