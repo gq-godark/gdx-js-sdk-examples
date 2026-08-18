@@ -45,6 +45,7 @@ for required in \
     .env.example \
     examples/quickstart.ts \
     examples/full-trader-example.ts \
+    examples/rest-client-example.ts \
     examples/dotenv.ts; do
   if [[ ! -f "${REPO_ROOT}/${required}" ]]; then
     echo "error: required file missing: ${required}" >&2
@@ -174,6 +175,7 @@ cp "${REPO_ROOT}/tsconfig.json"            "$DEST/tsconfig.json"
 # Examples - the actual demos the recipient is going to run.
 cp "${REPO_ROOT}/examples/quickstart.ts"          "$DEST/examples/"
 cp "${REPO_ROOT}/examples/full-trader-example.ts" "$DEST/examples/"
+cp "${REPO_ROOT}/examples/rest-client-example.ts" "$DEST/examples/"
 cp "${REPO_ROOT}/examples/dotenv.ts"              "$DEST/examples/"
 
 # Prebuilt @godark/sdk tarball — repacked from the parity-verified upstream

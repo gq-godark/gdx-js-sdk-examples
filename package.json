@@ -10,14 +10,15 @@
   "scripts": {
     "quickstart": "tsx examples/quickstart.ts",
     "full-trader": "tsx examples/full-trader-example.ts",
+    "rest-client": "tsx examples/rest-client-example.ts",
     "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@godark/sdk": "file:./sdk/godark-sdk-0.2.0.tgz"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@godark/sdk": "file:sdk/godark-sdk-0.2.0.tgz"
   }
 }
