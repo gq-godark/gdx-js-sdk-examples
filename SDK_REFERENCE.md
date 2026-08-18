@@ -92,8 +92,9 @@ To consume `@godark/sdk` from your own project outside this repo:
 | Method        | Signature (abridged)                                                                                                  | Purpose                                  |
 |---------------|-----------------------------------------------------------------------------------------------------------------------|------------------------------------------|
 | `placeOrder`  | `placeOrder(opts: PlaceOrderOptions) -> Promise<OrderAck>`                                                            | Encrypted order placement                |
+| `updateLeverage` | `updateLeverage(symbol: string, leverage: number) -> Promise<OrderAck>`                                            | Set per-symbol account leverage          |
 | `cancelOrder` | `cancelOrder(orderId: string, symbol: string) -> Promise<OrderAck>`                                                   | Cancel an open order                     |
-| `massQuote`  | `massQuote(symbol, legs, leverage?, postOnly?): Promise<MassQuoteAck>` | Bulk cancel-replace ladder |
+| `massQuote`  | `massQuote(symbol, legs, postOnly?): Promise<MassQuoteAck>` | Bulk cancel-replace ladder |
 | `batchCancel` | `batchCancel(symbol, orderIds): Promise<BatchCancelAck>` | Cancel multiple resting orders |
 | `modifyOrder` | `modifyOrder(orderId: string, symbol: string, opts: ModifyOrderOptions) -> Promise<OrderAck>`                         | Modify an open order's price / quantity  |
 
