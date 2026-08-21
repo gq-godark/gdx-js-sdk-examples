@@ -16,6 +16,18 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Cheap, no GitHub App: catch a stale lockfile hash after a tarball bump
+  # or a merge that kept package-lock.json from the other parent.
+  verify-lockfile:
+    name: Verify vendored SDK lockfile integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout examples repo
+        uses: actions/checkout@v4
+      - name: Check tarball sha512 vs package-lock.json
+        run: bash scripts/verify_sdk_integrity.sh
+
   # build: example sources + the vendored npm tarball packaged into a
   # Node.js bundle zip. The tarball is content-diffed against a fresh
   # npm pack of gq-godark/gdx-js-sdk at the commit pinned in
