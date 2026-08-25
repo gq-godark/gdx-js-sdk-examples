@@ -20,23 +20,33 @@ const SYMBOL = 'BTC-USDC-PERP';
 async function main(): Promise<void> {
   loadDotenv();
 
-  const apiKeyId = envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID']);
-  const apiSecret = envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET']);
-  const passphrase = envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE']);
-
-  if (!apiKeyId || !apiSecret || !passphrase) {
-    console.error('Set GODARK_API_KEY_ID, GODARK_API_SECRET and GODARK_PASSPHRASE');
-    process.exit(1);
-  }
-
+  const legacyKey = envFirst(['GODARK_API_KEY', 'GDX_API_KEY']);
   const edge = envFirst(['GODARK_EDGE_URL', 'GDX_EDGE_URL']);
-  const client = new GodarkClient({
-    apiKeyId,
-    apiSecret,
-    passphrase,
+  const clientOpts: ConstructorParameters<typeof GodarkClient>[0] = {
     environment: Environment.Testnet,
     ...(edge ? { baseUrl: edge } : {}),
-  });
+  };
+  if (legacyKey) {
+    Object.assign(clientOpts, {
+      apiKey: legacyKey,
+      ...(envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'])
+        ? { userUuid: envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID']) }
+        : {}),
+    });
+  } else {
+    const apiKeyId = envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID']);
+    const apiSecret = envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET']);
+    const passphrase = envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE']);
+    if (!apiKeyId || !apiSecret || !passphrase) {
+      console.error(
+        'Set GODARK_API_KEY_ID/GODARK_API_SECRET/GODARK_PASSPHRASE or legacy GODARK_API_KEY',
+      );
+      process.exit(1);
+    }
+    Object.assign(clientOpts, { apiKeyId, apiSecret, passphrase });
+  }
+
+  const client = new GodarkClient(clientOpts);
 
   try {
     await client.connect();

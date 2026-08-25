@@ -103,9 +103,7 @@ function onTrade(msg: Record<string, unknown>): void {
 }
 
 function makeClient(): GodarkClient {
-  const kid = envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID'], DEFAULT_API_KEY_ID);
-  const secret = envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET'], DEFAULT_API_SECRET);
-  const passphrase = envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE'], DEFAULT_API_PASSPHRASE);
+  const legacyKey = envFirst(['GODARK_API_KEY', 'GDX_API_KEY']);
   const hpkePin = envFirst(
     [
       'GODARK_HPKE_STATIC_PUBLIC_KEY',
@@ -117,10 +115,7 @@ function makeClient(): GodarkClient {
     ],
     '',
   );
-  return new GodarkClient({
-    apiKeyId: kid,
-    apiSecret: secret,
-    passphrase,
+  const common = {
     environment: Environment.Testnet,
     ...(EDGE_OVERRIDE ? { baseUrl: EDGE_OVERRIDE } : {}),
     ...(hpkePin ? { noiseStaticPublicKeyHex: hpkePin } : {}),
@@ -128,6 +123,57 @@ function makeClient(): GodarkClient {
     streamBufferSize: STREAM_BUFFER,
     autoReconnect: true,
     onError,
+  };
+  if (legacyKey) {
+    return new GodarkClient({
+      ...common,
+      apiKey: legacyKey,
+      ...(envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '')
+        ? { userUuid: envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '') }
+        : {}),
+    });
+  }
+  const kid = envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID'], DEFAULT_API_KEY_ID);
+  const secret = envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET'], DEFAULT_API_SECRET);
+  const passphrase = envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE'], DEFAULT_API_PASSPHRASE);
+  if (kid === DEFAULT_API_KEY_ID || secret === DEFAULT_API_SECRET || passphrase === DEFAULT_API_PASSPHRASE) {
+    throw new GodarkError(
+      'Set GODARK_API_KEY_ID/GODARK_API_SECRET/GODARK_PASSPHRASE or legacy GODARK_API_KEY',
+    );
+  }
+  return new GodarkClient({
+    ...common,
+    apiKeyId: kid,
+    apiSecret: secret,
+    passphrase,
+  });
+}
+
+function makeRestClient(): GodarkRestClient {
+  const legacyKey = envFirst(['GODARK_API_KEY', 'GDX_API_KEY']);
+  const common = {
+    ...(EDGE_OVERRIDE
+      ? {
+          restBaseUrl: EDGE_OVERRIDE.replace(/^wss:/, 'https:')
+            .replace(/^ws:/, 'http:')
+            .replace(/\/ws\/v1\/?$/, ''),
+        }
+      : {}),
+  };
+  if (legacyKey) {
+    return new GodarkRestClient({
+      ...common,
+      apiKey: legacyKey,
+      ...(envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '')
+        ? { userUuid: envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '') }
+        : {}),
+    });
+  }
+  return new GodarkRestClient({
+    ...common,
+    apiKeyId: envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID'], DEFAULT_API_KEY_ID),
+    apiSecret: envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET'], DEFAULT_API_SECRET),
+    passphrase: envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE'], DEFAULT_API_PASSPHRASE),
   });
 }
 
@@ -202,12 +248,7 @@ async function runStrategy(): Promise<void> {
   // Leverage updates use encrypted REST on the HPKE SDK (not the WS client).
   console.log('Setting leverage to 1 via GodarkRestClient.updateLeverage...');
   try {
-    const rest = new GodarkRestClient({
-      apiKeyId: envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID'], DEFAULT_API_KEY_ID),
-      apiSecret: envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET'], DEFAULT_API_SECRET),
-      passphrase: envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE'], DEFAULT_API_PASSPHRASE),
-      ...(EDGE_OVERRIDE ? { restBaseUrl: EDGE_OVERRIDE.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:').replace(/\/ws\/v1\/?$/, '') } : {}),
-    });
+    const rest = makeRestClient();
     await rest.connect();
     const levAck = await rest.updateLeverage(SYMBOL, 1);
     console.log(`updateLeverage: success=${levAck.success} order_id=${levAck.orderId}`);
