@@ -9,7 +9,7 @@
  *   GODARK_API_KEY_ID, GODARK_API_SECRET, GODARK_PASSPHRASE
  *   (legacy GDX_* aliases accepted when GODARK_* is unset)
  *   GODARK_EDGE_URL (optional; default Environment.Testnet)
- *   GODARK_NOISE_STATIC_PUBLIC_KEY (optional override; baked into Testnet)
+ *   GODARK_HPKE_STATIC_PUBLIC_KEY / GDX_HPKE_STATIC_PUBLIC_KEY (optional; legacy GDX_NOISE_* accepted)
  */
 import { Environment, GodarkClient } from '@godark/sdk';
 

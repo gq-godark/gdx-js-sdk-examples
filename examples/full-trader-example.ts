@@ -7,7 +7,7 @@
  *   GODARK_EDGE_URL / GDX_EDGE_URL (default Environment.Testnet)
  *   GODARK_API_KEY_ID / GDX_API_KEY_ID, GODARK_API_SECRET / GDX_API_SECRET
  *   GODARK_PASSPHRASE / GDX_PASSPHRASE
- *   GODARK_NOISE_STATIC_PUBLIC_KEY (optional; Testnet pin is baked in)
+ *   GODARK_HPKE_STATIC_PUBLIC_KEY / GDX_HPKE_STATIC_PUBLIC_KEY (optional; legacy GDX_NOISE_* accepted)
  *   GODARK_TLS_SKIP_VERIFY / GDX_TLS_SKIP_VERIFY
  */
 import {
@@ -105,8 +105,15 @@ function makeClient(): GodarkClient {
   const kid = envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID'], DEFAULT_API_KEY_ID);
   const secret = envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET'], DEFAULT_API_SECRET);
   const passphrase = envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE'], DEFAULT_API_PASSPHRASE);
-  const noisePin = envFirst(
-    ['GODARK_NOISE_STATIC_PUBLIC_KEY', 'GDX_NOISE_STATIC_PUBLIC_KEY', 'GDX_NOISE_STATIC_PUBKEY'],
+  const hpkePin = envFirst(
+    [
+      'GODARK_HPKE_STATIC_PUBLIC_KEY',
+      'GDX_HPKE_STATIC_PUBLIC_KEY',
+      'GDX_HPKE_STATIC_PUBKEY',
+      'GODARK_NOISE_STATIC_PUBLIC_KEY',
+      'GDX_NOISE_STATIC_PUBLIC_KEY',
+      'GDX_NOISE_STATIC_PUBKEY',
+    ],
     '',
   );
   return new GodarkClient({
@@ -115,7 +122,7 @@ function makeClient(): GodarkClient {
     passphrase,
     environment: Environment.Testnet,
     ...(EDGE_OVERRIDE ? { baseUrl: EDGE_OVERRIDE } : {}),
-    ...(noisePin ? { noiseStaticPublicKeyHex: noisePin } : {}),
+    ...(hpkePin ? { noiseStaticPublicKeyHex: hpkePin } : {}),
     transportOptions,
     streamBufferSize: STREAM_BUFFER,
     autoReconnect: true,
@@ -171,7 +178,7 @@ async function runStrategy(): Promise<void> {
   }
 
   console.log(
-    `Authenticated as user_uuid=${client.userUuid}  (Noise XK session, buffer=${STREAM_BUFFER})`,
+    `Authenticated as user_uuid=${client.userUuid}  (HPKE session, buffer=${STREAM_BUFFER})`,
   );
 
   await client.subscribe(['orders', 'positions']);
