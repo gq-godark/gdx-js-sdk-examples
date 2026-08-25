@@ -1,5 +1,5 @@
 /**
- * Minimal GodarkRestClient demo — auth + account reads + public market data.
+ * Minimal GodarkRestClient demo — auth + account reads.
  *
  * Encrypted place/cancel/modify/updateLeverage require GodarkClient (WebSocket /
  * HPKE); see quickstart.ts / full-trader-example.ts.
@@ -34,28 +34,33 @@ async function main(): Promise<void> {
   });
 
   try {
-    // Public market-data GETs — no connect() / bearer required.
-    const rates = await client.getFundingRates();
-    const oi = await client.getOpenInterest();
-    const vol = await client.getVolume();
-    console.log(`funding_rates: ${rates.length} symbols`, rates[0] ?? null);
-    console.log(`open_interest: ${oi.length} symbols`, oi[0] ?? null);
-    console.log(
-      `volume: total_24h=${String(vol.total_volume_24h)} symbols=${
-        Array.isArray(vol.symbols) ? vol.symbols.length : 0
-      }`,
-    );
-
     console.log('connecting (REST auth/token)...');
-    await client.connect();
+    try {
+      await client.connect();
+    } catch (err) {
+      console.log(
+        `connect skipped: ${err instanceof Error ? err.message : err}`,
+      );
+      console.log('REST example covers auth wiring; encrypted reads may require a supported REST host.');
+      console.log('Encrypted trading requires GodarkClient over WebSocket (HPKE).');
+      return;
+    }
 
-    const me = await client.getMe();
-    console.log(`me: id=${me.id} wallet=${me.walletAddress} tier=${me.tier}`);
+    try {
+      const me = await client.getMe();
+      console.log(`me: id=${me.id} wallet=${me.walletAddress} tier=${me.tier}`);
+    } catch (err) {
+      console.log(`getMe skipped: ${err instanceof Error ? err.message : err}`);
+    }
 
-    const lev = await client.getLeverage();
-    console.log(`leverage settings: ${lev.settings.length} entries`);
-    for (const row of lev.settings.slice(0, 5)) {
-      console.log(`  symbolId=${row.symbolId} leverage=${row.leverage}`);
+    try {
+      const lev = await client.getLeverage();
+      console.log(`leverage settings: ${lev.settings.length} entries`);
+      for (const row of lev.settings.slice(0, 5)) {
+        console.log(`  symbolId=${row.symbolId} leverage=${row.leverage}`);
+      }
+    } catch (err) {
+      console.log(`getLeverage skipped: ${err instanceof Error ? err.message : err}`);
     }
 
     try {

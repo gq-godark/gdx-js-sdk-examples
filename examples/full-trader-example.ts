@@ -14,6 +14,7 @@ import {
   Environment,
   GodarkClient,
   GodarkError,
+  GodarkRestClient,
   MarketDataClient,
   type MassQuoteLegInput,
   type OrderAck,
@@ -198,26 +199,33 @@ async function runStrategy(): Promise<void> {
     console.warn('Market data unavailable (continuing without):', e);
   }
 
-  // Leverage is per-symbol account state (not a placeOrder/massQuote field).
-  console.log('Setting leverage to 1 via updateLeverage...');
+  // Leverage updates use encrypted REST on the HPKE SDK (not the WS client).
+  console.log('Setting leverage to 1 via GodarkRestClient.updateLeverage...');
   try {
-    const levAck = await client.updateLeverage(SYMBOL, 1);
+    const rest = new GodarkRestClient({
+      apiKeyId: envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID'], DEFAULT_API_KEY_ID),
+      apiSecret: envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET'], DEFAULT_API_SECRET),
+      passphrase: envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE'], DEFAULT_API_PASSPHRASE),
+      ...(EDGE_OVERRIDE ? { restBaseUrl: EDGE_OVERRIDE.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:').replace(/\/ws\/v1\/?$/, '') } : {}),
+    });
+    await rest.connect();
+    const levAck = await rest.updateLeverage(SYMBOL, 1);
     console.log(`updateLeverage: success=${levAck.success} order_id=${levAck.orderId}`);
+    await rest.disconnect();
   } catch (e: unknown) {
     printOrderError('updateLeverage', e);
-    await md.disconnect().catch(() => {});
-    await client.disconnect();
-    return;
   }
 
-  console.log('Placing limit BUY...');
+  const mark = Number(envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'));
+  const buyPx = Math.round(mark * 0.997 * 10) / 10;
+  console.log(`Placing limit BUY @ ${buyPx} (mark=${mark})...`);
   let buyAck: OrderAck;
   try {
     buyAck = await client.placeOrder({
       symbol: SYMBOL,
       side: 'BUY',
       orderType: 'LIMIT',
-      price: 67_500,
+      price: buyPx,
       quantity: 0.1,
       timeInForce: 'GTC',
     });
@@ -234,10 +242,11 @@ async function runStrategy(): Promise<void> {
 
   await new Promise((r) => setTimeout(r, 1000));
 
-  console.log('Modifying order price to $68,000...');
+  const modifyPx = Math.round(mark * 0.996 * 10) / 10;
+  console.log(`Modifying order price to ${modifyPx}...`);
   try {
     const modAck = await client.modifyOrder(buyAck.orderId, SYMBOL, {
-      newPrice: 68_000,
+      newPrice: modifyPx,
     });
     console.log(`Modified: order_id=${modAck.orderId}`);
   } catch (e: unknown) {
@@ -246,13 +255,14 @@ async function runStrategy(): Promise<void> {
 
   await new Promise((r) => setTimeout(r, 1000));
 
-  console.log('Placing limit SELL...');
+  const sellPx = Math.round(mark * 1.03 * 10) / 10;
+  console.log(`Placing limit SELL @ ${sellPx}...`);
   try {
     const sellAck = await client.placeOrder({
       symbol: SYMBOL,
       side: 'SELL',
       orderType: 'LIMIT',
-      price: 95_000,
+      price: sellPx,
       quantity: 0.05,
     });
     console.log(`SELL placed: order_id=${sellAck.orderId}`);
