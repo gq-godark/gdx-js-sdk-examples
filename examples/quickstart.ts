@@ -45,14 +45,18 @@ async function main(): Promise<void> {
     // Book confirmation waits on private order updates; subscribe first.
     await client.subscribe(['orders']);
 
+    const mark = Number(
+      envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'),
+    );
+    const sellPx = Math.round(mark * 1.03 * 10) / 10;
     const ack = await client.placeOrder({
       symbol: SYMBOL,
       side: 'SELL',
       orderType: 'LIMIT',
-      price: 69515.2,
+      price: sellPx,
       quantity: 0.01,
     });
-    console.log(`Place OK -- order_id=${ack.orderId}`);
+    console.log(`Place OK -- order_id=${ack.orderId} (limit SELL @ ${sellPx}, mark=${mark})`);
 
     // Allow the resting order to settle before cancel (avoids CANCEL_TOO_SOON).
     await new Promise((r) => setTimeout(r, 500));
