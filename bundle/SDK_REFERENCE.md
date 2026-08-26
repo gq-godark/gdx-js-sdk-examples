@@ -1,6 +1,6 @@
 # GoDark JavaScript SDK Reference (MM Distribution)
 
-This reference describes the API surface used by the two example scripts shipped in this distribution. They exercise the WebSocket encrypted-trading path via `GodarkClient` (Noise XK) plus the public market-data feed via `MarketDataClient`. Encrypted REST trading is not supported — all order flow (place / modify / cancel / mass-quote) runs over the WebSocket client.
+This reference describes the API surface used by the two example scripts shipped in this distribution. They exercise the WebSocket encrypted-trading path via `GodarkClient` (HPKE WebSocket) plus the public market-data feed via `MarketDataClient`. Encrypted REST trading is not supported — all order flow (place / modify / cancel / mass-quote) runs over the WebSocket client.
 
 Order placement support in this MM distribution is limited to `MARKET` and `LIMIT`.
 
@@ -51,7 +51,7 @@ Use `.env.example` as the template for your local `.env`. The OS environment alw
 | Method        | Signature                                                   | Purpose                                              |
 |---------------|-------------------------------------------------------------|------------------------------------------------------|
 | constructor   | `new GodarkClient(opts: GodarkClientOptions)`               | Construct the client                                 |
-| `connect`     | `connect(): Promise<void>`                                  | Authenticate + Noise XK handshake + encrypted session           |
+| `connect`     | `connect(): Promise<void>`                                  | Authenticate + HPKE setup handshake + encrypted session           |
 | `disconnect`  | `disconnect(): Promise<void>`                               | Graceful disconnect                                  |
 | `userUuid`    | `readonly userUuid: string \| undefined`                    | Authenticated user id (populated after `connect`)    |
 
@@ -132,7 +132,7 @@ Note: the SDK accepts additional order types (`PEG_TO_*`) for compatibility with
 `GodarkError` is the base class for every error type the SDK throws. Concrete subclasses (all in the public exports):
 
 - `AuthenticationError` — API key auth failed
-- `SessionError` — Noise XK handshake or rekey failed
+- `SessionError` — HPKE setup handshake or rekey failed
 - `OrderError` — server rejected the order; carries `errorCode?: string` for the symbolic reason (e.g. `'PRICE_DEVIATION_TOO_LARGE'`, `'MARGIN_INSUFFICIENT'`). The shared `examples/dotenv.ts` has a `printOrderError(op, err)` helper that surfaces this.
 - `ConnectionError` — WebSocket transport failure
 - `EncryptionError` — AES-GCM encrypt / decrypt failed

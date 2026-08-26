@@ -7,13 +7,14 @@
  *   GODARK_EDGE_URL / GDX_EDGE_URL (default Environment.Testnet)
  *   GODARK_API_KEY_ID / GDX_API_KEY_ID, GODARK_API_SECRET / GDX_API_SECRET
  *   GODARK_PASSPHRASE / GDX_PASSPHRASE
- *   GODARK_NOISE_STATIC_PUBLIC_KEY (optional; Testnet pin is baked in)
+ *   GODARK_HPKE_STATIC_PUBLIC_KEY / GDX_HPKE_STATIC_PUBLIC_KEY (optional; legacy GDX_NOISE_* accepted)
  *   GODARK_TLS_SKIP_VERIFY / GDX_TLS_SKIP_VERIFY
  */
 import {
   Environment,
   GodarkClient,
   GodarkError,
+  GodarkRestClient,
   MarketDataClient,
   type MassQuoteLegInput,
   type OrderAck,
@@ -102,24 +103,77 @@ function onTrade(msg: Record<string, unknown>): void {
 }
 
 function makeClient(): GodarkClient {
-  const kid = envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID'], DEFAULT_API_KEY_ID);
-  const secret = envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET'], DEFAULT_API_SECRET);
-  const passphrase = envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE'], DEFAULT_API_PASSPHRASE);
-  const noisePin = envFirst(
-    ['GODARK_NOISE_STATIC_PUBLIC_KEY', 'GDX_NOISE_STATIC_PUBLIC_KEY', 'GDX_NOISE_STATIC_PUBKEY'],
+  const legacyKey = envFirst(['GODARK_API_KEY', 'GDX_API_KEY']);
+  const hpkePin = envFirst(
+    [
+      'GODARK_HPKE_STATIC_PUBLIC_KEY',
+      'GDX_HPKE_STATIC_PUBLIC_KEY',
+      'GDX_HPKE_STATIC_PUBKEY',
+      'GODARK_NOISE_STATIC_PUBLIC_KEY',
+      'GDX_NOISE_STATIC_PUBLIC_KEY',
+      'GDX_NOISE_STATIC_PUBKEY',
+    ],
     '',
   );
-  return new GodarkClient({
-    apiKeyId: kid,
-    apiSecret: secret,
-    passphrase,
+  const common = {
     environment: Environment.Testnet,
     ...(EDGE_OVERRIDE ? { baseUrl: EDGE_OVERRIDE } : {}),
-    ...(noisePin ? { noiseStaticPublicKeyHex: noisePin } : {}),
+    ...(hpkePin ? { noiseStaticPublicKeyHex: hpkePin } : {}),
     transportOptions,
     streamBufferSize: STREAM_BUFFER,
     autoReconnect: true,
     onError,
+  };
+  if (legacyKey) {
+    return new GodarkClient({
+      ...common,
+      apiKey: legacyKey,
+      ...(envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '')
+        ? { userUuid: envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '') }
+        : {}),
+    });
+  }
+  const kid = envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID'], DEFAULT_API_KEY_ID);
+  const secret = envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET'], DEFAULT_API_SECRET);
+  const passphrase = envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE'], DEFAULT_API_PASSPHRASE);
+  if (kid === DEFAULT_API_KEY_ID || secret === DEFAULT_API_SECRET || passphrase === DEFAULT_API_PASSPHRASE) {
+    throw new GodarkError(
+      'Set GODARK_API_KEY_ID/GODARK_API_SECRET/GODARK_PASSPHRASE or legacy GODARK_API_KEY',
+    );
+  }
+  return new GodarkClient({
+    ...common,
+    apiKeyId: kid,
+    apiSecret: secret,
+    passphrase,
+  });
+}
+
+function makeRestClient(): GodarkRestClient {
+  const legacyKey = envFirst(['GODARK_API_KEY', 'GDX_API_KEY']);
+  const common = {
+    ...(EDGE_OVERRIDE
+      ? {
+          restBaseUrl: EDGE_OVERRIDE.replace(/^wss:/, 'https:')
+            .replace(/^ws:/, 'http:')
+            .replace(/\/ws\/v1\/?$/, ''),
+        }
+      : {}),
+  };
+  if (legacyKey) {
+    return new GodarkRestClient({
+      ...common,
+      apiKey: legacyKey,
+      ...(envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '')
+        ? { userUuid: envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '') }
+        : {}),
+    });
+  }
+  return new GodarkRestClient({
+    ...common,
+    apiKeyId: envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID'], DEFAULT_API_KEY_ID),
+    apiSecret: envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET'], DEFAULT_API_SECRET),
+    passphrase: envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE'], DEFAULT_API_PASSPHRASE),
   });
 }
 
@@ -171,7 +225,7 @@ async function runStrategy(): Promise<void> {
   }
 
   console.log(
-    `Authenticated as user_uuid=${client.userUuid}  (Noise XK session, buffer=${STREAM_BUFFER})`,
+    `Authenticated as user_uuid=${client.userUuid}  (HPKE session, buffer=${STREAM_BUFFER})`,
   );
 
   await client.subscribe(['orders', 'positions']);
@@ -191,26 +245,28 @@ async function runStrategy(): Promise<void> {
     console.warn('Market data unavailable (continuing without):', e);
   }
 
-  // Leverage is per-symbol account state (not a placeOrder/massQuote field).
-  console.log('Setting leverage to 1 via updateLeverage...');
+  // Leverage updates use encrypted REST on the HPKE SDK (not the WS client).
+  console.log('Setting leverage to 1 via GodarkRestClient.updateLeverage...');
   try {
-    const levAck = await client.updateLeverage(SYMBOL, 1);
+    const rest = makeRestClient();
+    await rest.connect();
+    const levAck = await rest.updateLeverage(SYMBOL, 1);
     console.log(`updateLeverage: success=${levAck.success} order_id=${levAck.orderId}`);
+    await rest.disconnect();
   } catch (e: unknown) {
     printOrderError('updateLeverage', e);
-    await md.disconnect().catch(() => {});
-    await client.disconnect();
-    return;
   }
 
-  console.log('Placing limit BUY...');
+  const mark = Number(envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'));
+  const buyPx = Math.round(mark * 0.997 * 10) / 10;
+  console.log(`Placing limit BUY @ ${buyPx} (mark=${mark})...`);
   let buyAck: OrderAck;
   try {
     buyAck = await client.placeOrder({
       symbol: SYMBOL,
       side: 'BUY',
       orderType: 'LIMIT',
-      price: 67_500,
+      price: buyPx,
       quantity: 0.1,
       timeInForce: 'GTC',
     });
@@ -227,10 +283,11 @@ async function runStrategy(): Promise<void> {
 
   await new Promise((r) => setTimeout(r, 1000));
 
-  console.log('Modifying order price to $68,000...');
+  const modifyPx = Math.round(mark * 0.996 * 10) / 10;
+  console.log(`Modifying order price to ${modifyPx}...`);
   try {
     const modAck = await client.modifyOrder(buyAck.orderId, SYMBOL, {
-      newPrice: 68_000,
+      newPrice: modifyPx,
     });
     console.log(`Modified: order_id=${modAck.orderId}`);
   } catch (e: unknown) {
@@ -239,13 +296,14 @@ async function runStrategy(): Promise<void> {
 
   await new Promise((r) => setTimeout(r, 1000));
 
-  console.log('Placing limit SELL...');
+  const sellPx = Math.round(mark * 1.03 * 10) / 10;
+  console.log(`Placing limit SELL @ ${sellPx}...`);
   try {
     const sellAck = await client.placeOrder({
       symbol: SYMBOL,
       side: 'SELL',
       orderType: 'LIMIT',
-      price: 95_000,
+      price: sellPx,
       quantity: 0.05,
     });
     console.log(`SELL placed: order_id=${sellAck.orderId}`);
