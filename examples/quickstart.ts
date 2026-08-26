@@ -9,7 +9,7 @@
  *   GODARK_API_KEY_ID, GODARK_API_SECRET, GODARK_PASSPHRASE
  *   (legacy GDX_* aliases accepted when GODARK_* is unset)
  *   GODARK_EDGE_URL (optional; default Environment.Testnet)
- *   GODARK_NOISE_STATIC_PUBLIC_KEY (optional override; baked into Testnet)
+ *   GODARK_HPKE_STATIC_PUBLIC_KEY / GDX_HPKE_STATIC_PUBLIC_KEY (optional; legacy GDX_NOISE_* accepted)
  */
 import { Environment, GodarkClient } from '@godark/sdk';
 
@@ -20,23 +20,33 @@ const SYMBOL = 'BTC-USDC-PERP';
 async function main(): Promise<void> {
   loadDotenv();
 
-  const apiKeyId = envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID']);
-  const apiSecret = envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET']);
-  const passphrase = envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE']);
-
-  if (!apiKeyId || !apiSecret || !passphrase) {
-    console.error('Set GODARK_API_KEY_ID, GODARK_API_SECRET and GODARK_PASSPHRASE');
-    process.exit(1);
-  }
-
+  const legacyKey = envFirst(['GODARK_API_KEY', 'GDX_API_KEY']);
   const edge = envFirst(['GODARK_EDGE_URL', 'GDX_EDGE_URL']);
-  const client = new GodarkClient({
-    apiKeyId,
-    apiSecret,
-    passphrase,
+  const clientOpts: ConstructorParameters<typeof GodarkClient>[0] = {
     environment: Environment.Testnet,
     ...(edge ? { baseUrl: edge } : {}),
-  });
+  };
+  if (legacyKey) {
+    Object.assign(clientOpts, {
+      apiKey: legacyKey,
+      ...(envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'])
+        ? { userUuid: envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID']) }
+        : {}),
+    });
+  } else {
+    const apiKeyId = envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID']);
+    const apiSecret = envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET']);
+    const passphrase = envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE']);
+    if (!apiKeyId || !apiSecret || !passphrase) {
+      console.error(
+        'Set GODARK_API_KEY_ID/GODARK_API_SECRET/GODARK_PASSPHRASE or legacy GODARK_API_KEY',
+      );
+      process.exit(1);
+    }
+    Object.assign(clientOpts, { apiKeyId, apiSecret, passphrase });
+  }
+
+  const client = new GodarkClient(clientOpts);
 
   try {
     await client.connect();
@@ -45,14 +55,18 @@ async function main(): Promise<void> {
     // Book confirmation waits on private order updates; subscribe first.
     await client.subscribe(['orders']);
 
+    const mark = Number(
+      envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'),
+    );
+    const sellPx = Math.round(mark * 1.03 * 10) / 10;
     const ack = await client.placeOrder({
       symbol: SYMBOL,
       side: 'SELL',
       orderType: 'LIMIT',
-      price: 69515.2,
+      price: sellPx,
       quantity: 0.01,
     });
-    console.log(`Place OK -- order_id=${ack.orderId}`);
+    console.log(`Place OK -- order_id=${ack.orderId} (limit SELL @ ${sellPx}, mark=${mark})`);
 
     // Allow the resting order to settle before cancel (avoids CANCEL_TOO_SOON).
     await new Promise((r) => setTimeout(r, 500));

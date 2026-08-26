@@ -4,7 +4,7 @@ This is the comprehensive reference for maintainers and developers working *insi
 
 A trimmed, recipient-facing copy is maintained at [`bundle/SDK_REFERENCE.md`](bundle/SDK_REFERENCE.md) and is the one copied into the root of released ZIP bundles as `SDK_REFERENCE.md`. The bundle version intentionally omits sections that recipients don't need (refresh / parity / pin discipline, error-code internals, forward-compat strategy, SDK sourcing options).
 
-> Scope: the MM examples use **WebSocket encrypted trading** via `GodarkClient` plus the public **market-data** feed via `MarketDataClient`. Encrypted REST trading is not supported — all order flow (place / modify / cancel / mass-quote) runs over the Noise XK WebSocket client. Order placement support is limited to `MARKET` and `LIMIT`.
+> Scope: the MM examples use **WebSocket encrypted trading** via `GodarkClient` plus the public **market-data** feed via `MarketDataClient`. Encrypted REST trading is not supported — all order flow (place / modify / cancel / mass-quote) runs over the HPKE WebSocket client. Order placement support is limited to `MARKET` and `LIMIT`.
 
 ## Quick Start
 
@@ -83,7 +83,7 @@ To consume `@godark/sdk` from your own project outside this repo:
 | Method       | Signature                                                       | Purpose                                       |
 |--------------|-----------------------------------------------------------------|-----------------------------------------------|
 | constructor  | `new GodarkClient(opts: GodarkClientOptions)`                   | Construct the client                          |
-| `connect`    | `connect(): Promise<void>`                                      | Authenticate + Noise XK handshake + encrypted session |
+| `connect`    | `connect(): Promise<void>`                                      | Authenticate + HPKE setup handshake + encrypted session |
 | `disconnect` | `disconnect(): Promise<void>`                                   | Graceful disconnect                           |
 | `userUuid`   | `readonly userUuid: string \| undefined`                        | Authenticated user id (set after `connect`)   |
 
@@ -154,7 +154,7 @@ The same `TransportOptions` shape used by `GodarkClient` is accepted by the `Mar
 
 ## GodarkRestClient (HTTP path, not exercised by the bundled examples)
 
-`GodarkRestClient` remains exported from the npm tarball for identity/balance helpers, but encrypted REST trading is not supported — place / modify / cancel / mass-quote must use `GodarkClient` over Noise XK WebSocket.
+`GodarkRestClient` remains exported from the npm tarball for identity/balance helpers, but encrypted REST trading is not supported — place / modify / cancel / mass-quote must use `GodarkClient` over HPKE WebSocket.
 
 ## Core Types
 
@@ -215,7 +215,7 @@ Note: the SDK additionally exposes parallel `*_FROM_PROTO` / `*_TO_PROTO` lookup
 | Class                  | When                                                                                       |
 |------------------------|--------------------------------------------------------------------------------------------|
 | `AuthenticationError`  | API key rejection at session bring-up                                                      |
-| `SessionError`         | Noise XK handshake or rekey failed                                                         |
+| `SessionError`         | HPKE setup handshake or rekey failed                                                         |
 | `OrderError`           | Order rejected by the sequencer; carries `errorCode?: string` (symbolic reason)            |
 | `ConnectionError`      | WebSocket transport failure                                                                |
 | `EncryptionError`      | AES-GCM encrypt / decrypt failure                                                          |
