@@ -64,8 +64,15 @@ let bestAsk: number | null = null;
 
 function onOrder(update: OrderUpdate): void {
   orderLog.push(update);
+  const badges = [
+    update.cancelReason ? `cancel_reason=${update.cancelReason}` : "",
+    update.reduceOnly ? "reduce_only=true" : "",
+    update.postOnly ? "post_only=true" : "",
+  ]
+    .filter(Boolean)
+    .join("  ");
   console.log(
-    `ORDER  ${update.updateType.padEnd(6)}  id=${update.orderId.padEnd(8)}  status=${update.status.padEnd(10)}  filled=${update.filledQty}  remaining=${update.remainingQty}`,
+    `ORDER  ${update.updateType.padEnd(6)}  id=${update.orderId.padEnd(8)}  status=${update.status.padEnd(10)}  filled=${update.filledQty}  remaining=${update.remainingQty}${badges ? `  ${badges}` : ""}`,
   );
 }
 
