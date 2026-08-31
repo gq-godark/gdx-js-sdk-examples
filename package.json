@@ -10,6 +10,7 @@
   "scripts": {
     "quickstart": "tsx examples/quickstart.ts",
     "full-trader": "tsx examples/full-trader-example.ts",
+    "full-trader-rest": "tsx examples/full-trader-rest.ts",
     "rest-client": "tsx examples/rest-client-example.ts",
     "typecheck": "tsc --noEmit"
   },

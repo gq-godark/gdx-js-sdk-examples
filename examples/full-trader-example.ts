@@ -14,8 +14,8 @@ import {
   Environment,
   GodarkClient,
   GodarkError,
-  GodarkRestClient,
   MarketDataClient,
+  type FundingRateUpdate,
   type MassQuoteLegInput,
   type OrderAck,
   type OrderUpdate,
@@ -59,8 +59,16 @@ const transportOptions: TransportOptions = {
 
 const orderLog: OrderUpdate[] = [];
 const positionLog: PositionUpdate[] = [];
+let fundingCount = 0;
 
 let bestAsk: number | null = null;
+
+function onFunding(update: FundingRateUpdate): void {
+  fundingCount += 1;
+  console.log(
+    `FUND   symbol=${update.symbolId}  rate=${update.currentRate}  predicted=${update.predictedRate}`,
+  );
+}
 
 function onOrder(update: OrderUpdate): void {
   orderLog.push(update);
@@ -156,34 +164,6 @@ function makeClient(): GodarkClient {
   });
 }
 
-function makeRestClient(): GodarkRestClient {
-  const legacyKey = envFirst(['GODARK_API_KEY', 'GDX_API_KEY']);
-  const common = {
-    ...(EDGE_OVERRIDE
-      ? {
-          restBaseUrl: EDGE_OVERRIDE.replace(/^wss:/, 'https:')
-            .replace(/^ws:/, 'http:')
-            .replace(/\/ws\/v1\/?$/, ''),
-        }
-      : {}),
-  };
-  if (legacyKey) {
-    return new GodarkRestClient({
-      ...common,
-      apiKey: legacyKey,
-      ...(envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '')
-        ? { userUuid: envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '') }
-        : {}),
-    });
-  }
-  return new GodarkRestClient({
-    ...common,
-    apiKeyId: envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID'], DEFAULT_API_KEY_ID),
-    apiSecret: envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET'], DEFAULT_API_SECRET),
-    passphrase: envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE'], DEFAULT_API_PASSPHRASE),
-  });
-}
-
 async function drainOrderUpdatesForMs(
   client: GodarkClient,
   ms: number,
@@ -218,6 +198,7 @@ async function runStrategy(): Promise<void> {
   const client = makeClient();
   client.onOrderUpdate(onOrder);
   client.onPositionUpdate(onPosition);
+  client.onFundingRateUpdate(onFunding);
   client.onReconnect(onReconnect);
 
   console.log('Connecting...');
@@ -235,8 +216,8 @@ async function runStrategy(): Promise<void> {
     `Authenticated as user_uuid=${client.userUuid}  (HPKE session, buffer=${STREAM_BUFFER})`,
   );
 
-  await client.subscribe(['orders', 'positions']);
-  console.log('Subscribed to order + position updates');
+  await client.subscribe(['orders', 'positions', 'funding_rate']);
+  console.log('Subscribed to order + position + funding updates');
 
   const md = new MarketDataClient(EDGE_URL, {
     headers: { 'X-Trader-Tag': 'js-md-demo' },
@@ -252,17 +233,8 @@ async function runStrategy(): Promise<void> {
     console.warn('Market data unavailable (continuing without):', e);
   }
 
-  // Leverage updates use encrypted REST on the HPKE SDK (not the WS client).
-  console.log('Setting leverage to 1 via GodarkRestClient.updateLeverage...');
-  try {
-    const rest = makeRestClient();
-    await rest.connect();
-    const levAck = await rest.updateLeverage(SYMBOL, 1);
-    console.log(`updateLeverage: success=${levAck.success} order_id=${levAck.orderId}`);
-    await rest.disconnect();
-  } catch (e: unknown) {
-    printOrderError('updateLeverage', e);
-  }
+  // Leverage updates are available via GodarkRestClient.updateLeverage (REST one-shot HPKE).
+  console.log('Skipping leverage update in WS example (use full-trader-rest for REST leverage).');
 
   const mark = Number(envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'));
   const buyPx = Math.round(mark * 0.997 * 10) / 10;
@@ -447,6 +419,7 @@ async function runStrategy(): Promise<void> {
   console.log('  Session complete');
   console.log(`  Order updates received (via callback): ${orderLog.length}`);
   console.log(`  Position updates received:             ${positionLog.length}`);
+  console.log(`  Funding updates received:              ${fundingCount}`);
   console.log('='.repeat(60));
 
   await md.disconnect().catch(() => {});
