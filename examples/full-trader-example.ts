@@ -66,7 +66,7 @@ let bestAsk: number | null = null;
 function onFunding(update: FundingRateUpdate): void {
   fundingCount += 1;
   console.log(
-    `FUND   symbol=${update.symbolId}  rate=${update.fundingRate}  last=${update.lastFundingRate}`,
+    `FUND   symbol=${update.symbolId}  rate=${update.currentRate}  predicted=${update.predictedRate}`,
   );
 }
 
@@ -233,14 +233,8 @@ async function runStrategy(): Promise<void> {
     console.warn('Market data unavailable (continuing without):', e);
   }
 
-  // Leverage is per-symbol account state; set it on the trading WS session.
-  console.log('Setting leverage to 1 via GodarkClient.updateLeverage...');
-  try {
-    const levAck = await client.updateLeverage(SYMBOL, 1);
-    console.log(`updateLeverage: success=${levAck.success} order_id=${levAck.orderId}`);
-  } catch (e: unknown) {
-    printOrderError('updateLeverage', e);
-  }
+  // Leverage updates are available via GodarkRestClient.updateLeverage (REST one-shot HPKE).
+  console.log('Skipping leverage update in WS example (use full-trader-rest for REST leverage).');
 
   const mark = Number(envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'));
   const buyPx = Math.round(mark * 0.997 * 10) / 10;
