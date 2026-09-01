@@ -7,7 +7,7 @@
  *   GODARK_EDGE_URL / GDX_EDGE_URL (default Environment.Testnet)
  *   GODARK_API_KEY_ID / GDX_API_KEY_ID, GODARK_API_SECRET / GDX_API_SECRET
  *   GODARK_PASSPHRASE / GDX_PASSPHRASE
- *   GODARK_HPKE_STATIC_PUBLIC_KEY / GDX_HPKE_STATIC_PUBLIC_KEY (optional; legacy GDX_NOISE_* accepted)
+ *   GODARK_HPKE_STATIC_PUBLIC_KEY / GDX_HPKE_STATIC_PUBLIC_KEY (optional
  *   GODARK_TLS_SKIP_VERIFY / GDX_TLS_SKIP_VERIFY
  */
 import {
@@ -16,6 +16,7 @@ import {
   GodarkError,
   MarketDataClient,
   type FundingRateUpdate,
+  type LeverageSettings,
   type MassQuoteLegInput,
   type OrderAck,
   type OrderUpdate,
@@ -60,6 +61,7 @@ const transportOptions: TransportOptions = {
 const orderLog: OrderUpdate[] = [];
 const positionLog: PositionUpdate[] = [];
 let fundingCount = 0;
+let leverageCount = 0;
 
 let bestAsk: number | null = null;
 
@@ -68,6 +70,16 @@ function onFunding(update: FundingRateUpdate): void {
   console.log(
     `FUND   symbol=${update.symbolId}  rate=${update.currentRate}  predicted=${update.predictedRate}`,
   );
+}
+
+function onLeverageSettings(settings: LeverageSettings): void {
+  leverageCount += 1;
+  const rows = settings.settings
+    .slice(0, 5)
+    .map((r) => `${r.symbolId}=${r.leverage}x`)
+    .join(', ');
+  const suffix = settings.settings.length > 5 ? '...' : '';
+  console.log(`LEVERAGE settings=[${rows}${suffix}]`);
 }
 
 function onOrder(update: OrderUpdate): void {
@@ -124,16 +136,16 @@ function makeClient(): GodarkClient {
       'GODARK_HPKE_STATIC_PUBLIC_KEY',
       'GDX_HPKE_STATIC_PUBLIC_KEY',
       'GDX_HPKE_STATIC_PUBKEY',
-      'GODARK_NOISE_STATIC_PUBLIC_KEY',
-      'GDX_NOISE_STATIC_PUBLIC_KEY',
-      'GDX_NOISE_STATIC_PUBKEY',
+      'GODARK_HPKE_STATIC_PUBLIC_KEY',
+      'GDX_HPKE_STATIC_PUBLIC_KEY',
+      'GDX_HPKE_STATIC_PUBKEY',
     ],
     '',
   );
   const common = {
     environment: Environment.Testnet,
     ...(EDGE_OVERRIDE ? { baseUrl: EDGE_OVERRIDE } : {}),
-    ...(hpkePin ? { noiseStaticPublicKeyHex: hpkePin } : {}),
+    ...(hpkePin ? { hpkeStaticPublicKeyHex: hpkePin } : {}),
     transportOptions,
     streamBufferSize: STREAM_BUFFER,
     autoReconnect: true,
@@ -199,6 +211,7 @@ async function runStrategy(): Promise<void> {
   client.onOrderUpdate(onOrder);
   client.onPositionUpdate(onPosition);
   client.onFundingRateUpdate(onFunding);
+  client.onLeverageSettings(onLeverageSettings);
   client.onReconnect(onReconnect);
 
   console.log('Connecting...');
@@ -284,6 +297,7 @@ async function runStrategy(): Promise<void> {
       orderType: 'LIMIT',
       price: sellPx,
       quantity: 0.05,
+      postOnly: true,
     });
     console.log(`SELL placed: order_id=${sellAck.orderId}`);
 
@@ -338,18 +352,14 @@ async function runStrategy(): Promise<void> {
   await new Promise((r) => setTimeout(r, 1000));
 
   if (restingIds.length > 0) {
-    console.log(
-      `Batch-cancelling ${restingIds.length} ladder orders (cleanup)...`,
-    );
+    console.log('cancel_all_orders (cleanup ladder)...');
     try {
-      const bc = await client.batchCancel(SYMBOL, restingIds);
-      for (const r of bc.results) {
-        console.log(
-          `  cancel id=${r.orderId}: cancelled=${r.cancelled} err=${r.errorCode ?? '-'}`,
-        );
-      }
+      const ca = await client.cancelAllOrders(SYMBOL);
+      console.log(
+        `  cancel_all: count=${ca.count} ids=[${ca.orderIds.join(', ')}]`,
+      );
     } catch (e: unknown) {
-      printOrderError('BATCH CANCEL', e);
+      printOrderError('cancel_all rejected', e);
     }
     await new Promise((r) => setTimeout(r, 500));
   }
@@ -420,6 +430,7 @@ async function runStrategy(): Promise<void> {
   console.log(`  Order updates received (via callback): ${orderLog.length}`);
   console.log(`  Position updates received:             ${positionLog.length}`);
   console.log(`  Funding updates received:              ${fundingCount}`);
+  console.log(`  Leverage settings received:            ${leverageCount}`);
   console.log('='.repeat(60));
 
   await md.disconnect().catch(() => {});

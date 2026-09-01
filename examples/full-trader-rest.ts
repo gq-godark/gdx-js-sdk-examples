@@ -52,10 +52,11 @@ async function main(): Promise<void> {
   const account = await client.getAccount();
   console.log('account', account.account?.totalCollateral);
 
-  const price = Number(process.env.GDX_LIVE_PRICE ?? '78000');
+  const mark = Number(process.env.GDX_LIVE_PRICE ?? '78000');
+  const price = mark - 5000;
   const ack = await client.placeOrder('BTC-USDC-PERP', 'BUY', {
     type: 'LIMIT',
-    quantity: 0.001,
+    quantity: 0.01,
     price,
     clientOrderId: 'sdk-js-rest-demo',
   });
