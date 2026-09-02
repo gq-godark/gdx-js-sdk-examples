@@ -68,7 +68,7 @@ let bestAsk: number | null = null;
 function onFunding(update: FundingRateUpdate): void {
   fundingCount += 1;
   console.log(
-    `FUND   symbol=${update.symbolId}  rate=${update.currentRate}  predicted=${update.predictedRate}`,
+    `FUND   symbol=${update.symbolId}  rate=${update.fundingRate}  last=${update.lastFundingRate}`,
   );
 }
 
