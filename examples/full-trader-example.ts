@@ -7,15 +7,16 @@
  *   GODARK_EDGE_URL / GDX_EDGE_URL (default Environment.Testnet)
  *   GODARK_API_KEY_ID / GDX_API_KEY_ID, GODARK_API_SECRET / GDX_API_SECRET
  *   GODARK_PASSPHRASE / GDX_PASSPHRASE
- *   GODARK_HPKE_STATIC_PUBLIC_KEY / GDX_HPKE_STATIC_PUBLIC_KEY (optional; legacy GDX_NOISE_* accepted)
+ *   GODARK_HPKE_STATIC_PUBLIC_KEY / GDX_HPKE_STATIC_PUBLIC_KEY (optional
  *   GODARK_TLS_SKIP_VERIFY / GDX_TLS_SKIP_VERIFY
  */
 import {
   Environment,
   GodarkClient,
   GodarkError,
-  GodarkRestClient,
   MarketDataClient,
+  type FundingRateUpdate,
+  type LeverageSettings,
   type MassQuoteLegInput,
   type OrderAck,
   type OrderUpdate,
@@ -59,13 +60,39 @@ const transportOptions: TransportOptions = {
 
 const orderLog: OrderUpdate[] = [];
 const positionLog: PositionUpdate[] = [];
+let fundingCount = 0;
+let leverageCount = 0;
 
 let bestAsk: number | null = null;
 
+function onFunding(update: FundingRateUpdate): void {
+  fundingCount += 1;
+  console.log(
+    `FUND   symbol=${update.symbolId}  rate=${update.fundingRate}  last=${update.lastFundingRate}`,
+  );
+}
+
+function onLeverageSettings(settings: LeverageSettings): void {
+  leverageCount += 1;
+  const rows = settings.settings
+    .slice(0, 5)
+    .map((r) => `${r.symbolId}=${r.leverage}x`)
+    .join(', ');
+  const suffix = settings.settings.length > 5 ? '...' : '';
+  console.log(`LEVERAGE settings=[${rows}${suffix}]`);
+}
+
 function onOrder(update: OrderUpdate): void {
   orderLog.push(update);
+  const badges = [
+    update.cancelReason ? `cancel_reason=${update.cancelReason}` : "",
+    update.reduceOnly ? "reduce_only=true" : "",
+    update.postOnly ? "post_only=true" : "",
+  ]
+    .filter(Boolean)
+    .join("  ");
   console.log(
-    `ORDER  ${update.updateType.padEnd(6)}  id=${update.orderId.padEnd(8)}  status=${update.status.padEnd(10)}  filled=${update.filledQty}  remaining=${update.remainingQty}`,
+    `ORDER  ${update.updateType.padEnd(6)}  id=${update.orderId.padEnd(8)}  status=${update.status.padEnd(10)}  filled=${update.filledQty}  remaining=${update.remainingQty}${badges ? `  ${badges}` : ""}`,
   );
 }
 
@@ -109,16 +136,16 @@ function makeClient(): GodarkClient {
       'GODARK_HPKE_STATIC_PUBLIC_KEY',
       'GDX_HPKE_STATIC_PUBLIC_KEY',
       'GDX_HPKE_STATIC_PUBKEY',
-      'GODARK_NOISE_STATIC_PUBLIC_KEY',
-      'GDX_NOISE_STATIC_PUBLIC_KEY',
-      'GDX_NOISE_STATIC_PUBKEY',
+      'GODARK_HPKE_STATIC_PUBLIC_KEY',
+      'GDX_HPKE_STATIC_PUBLIC_KEY',
+      'GDX_HPKE_STATIC_PUBKEY',
     ],
     '',
   );
   const common = {
     environment: Environment.Testnet,
     ...(EDGE_OVERRIDE ? { baseUrl: EDGE_OVERRIDE } : {}),
-    ...(hpkePin ? { noiseStaticPublicKeyHex: hpkePin } : {}),
+    ...(hpkePin ? { hpkeStaticPublicKeyHex: hpkePin } : {}),
     transportOptions,
     streamBufferSize: STREAM_BUFFER,
     autoReconnect: true,
@@ -146,34 +173,6 @@ function makeClient(): GodarkClient {
     apiKeyId: kid,
     apiSecret: secret,
     passphrase,
-  });
-}
-
-function makeRestClient(): GodarkRestClient {
-  const legacyKey = envFirst(['GODARK_API_KEY', 'GDX_API_KEY']);
-  const common = {
-    ...(EDGE_OVERRIDE
-      ? {
-          restBaseUrl: EDGE_OVERRIDE.replace(/^wss:/, 'https:')
-            .replace(/^ws:/, 'http:')
-            .replace(/\/ws\/v1\/?$/, ''),
-        }
-      : {}),
-  };
-  if (legacyKey) {
-    return new GodarkRestClient({
-      ...common,
-      apiKey: legacyKey,
-      ...(envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '')
-        ? { userUuid: envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '') }
-        : {}),
-    });
-  }
-  return new GodarkRestClient({
-    ...common,
-    apiKeyId: envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID'], DEFAULT_API_KEY_ID),
-    apiSecret: envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET'], DEFAULT_API_SECRET),
-    passphrase: envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE'], DEFAULT_API_PASSPHRASE),
   });
 }
 
@@ -211,6 +210,8 @@ async function runStrategy(): Promise<void> {
   const client = makeClient();
   client.onOrderUpdate(onOrder);
   client.onPositionUpdate(onPosition);
+  client.onFundingRateUpdate(onFunding);
+  client.onLeverageSettings(onLeverageSettings);
   client.onReconnect(onReconnect);
 
   console.log('Connecting...');
@@ -228,8 +229,8 @@ async function runStrategy(): Promise<void> {
     `Authenticated as user_uuid=${client.userUuid}  (HPKE session, buffer=${STREAM_BUFFER})`,
   );
 
-  await client.subscribe(['orders', 'positions']);
-  console.log('Subscribed to order + position updates');
+  await client.subscribe(['orders', 'positions', 'funding_rate']);
+  console.log('Subscribed to order + position + funding updates');
 
   const md = new MarketDataClient(EDGE_URL, {
     headers: { 'X-Trader-Tag': 'js-md-demo' },
@@ -245,17 +246,8 @@ async function runStrategy(): Promise<void> {
     console.warn('Market data unavailable (continuing without):', e);
   }
 
-  // Leverage updates use encrypted REST on the HPKE SDK (not the WS client).
-  console.log('Setting leverage to 1 via GodarkRestClient.updateLeverage...');
-  try {
-    const rest = makeRestClient();
-    await rest.connect();
-    const levAck = await rest.updateLeverage(SYMBOL, 1);
-    console.log(`updateLeverage: success=${levAck.success} order_id=${levAck.orderId}`);
-    await rest.disconnect();
-  } catch (e: unknown) {
-    printOrderError('updateLeverage', e);
-  }
+  // Leverage updates are available via GodarkRestClient.updateLeverage (REST one-shot HPKE).
+  console.log('Skipping leverage update in WS example (use full-trader-rest for REST leverage).');
 
   const mark = Number(envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'));
   const buyPx = Math.round(mark * 0.997 * 10) / 10;
@@ -305,6 +297,7 @@ async function runStrategy(): Promise<void> {
       orderType: 'LIMIT',
       price: sellPx,
       quantity: 0.05,
+      postOnly: true,
     });
     console.log(`SELL placed: order_id=${sellAck.orderId}`);
 
@@ -359,18 +352,14 @@ async function runStrategy(): Promise<void> {
   await new Promise((r) => setTimeout(r, 1000));
 
   if (restingIds.length > 0) {
-    console.log(
-      `Batch-cancelling ${restingIds.length} ladder orders (cleanup)...`,
-    );
+    console.log('cancel_all_orders (cleanup ladder)...');
     try {
-      const bc = await client.batchCancel(SYMBOL, restingIds);
-      for (const r of bc.results) {
-        console.log(
-          `  cancel id=${r.orderId}: cancelled=${r.cancelled} err=${r.errorCode ?? '-'}`,
-        );
-      }
+      const ca = await client.cancelAllOrders(SYMBOL);
+      console.log(
+        `  cancel_all: count=${ca.count} ids=[${ca.orderIds.join(', ')}]`,
+      );
     } catch (e: unknown) {
-      printOrderError('BATCH CANCEL', e);
+      printOrderError('cancel_all rejected', e);
     }
     await new Promise((r) => setTimeout(r, 500));
   }
@@ -440,6 +429,8 @@ async function runStrategy(): Promise<void> {
   console.log('  Session complete');
   console.log(`  Order updates received (via callback): ${orderLog.length}`);
   console.log(`  Position updates received:             ${positionLog.length}`);
+  console.log(`  Funding updates received:              ${fundingCount}`);
+  console.log(`  Leverage settings received:            ${leverageCount}`);
   console.log('='.repeat(60));
 
   await md.disconnect().catch(() => {});

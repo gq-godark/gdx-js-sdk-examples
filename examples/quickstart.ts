@@ -9,7 +9,7 @@
  *   GODARK_API_KEY_ID, GODARK_API_SECRET, GODARK_PASSPHRASE
  *   (legacy GDX_* aliases accepted when GODARK_* is unset)
  *   GODARK_EDGE_URL (optional; default Environment.Testnet)
- *   GODARK_HPKE_STATIC_PUBLIC_KEY / GDX_HPKE_STATIC_PUBLIC_KEY (optional; legacy GDX_NOISE_* accepted)
+ *   GODARK_HPKE_STATIC_PUBLIC_KEY / GDX_HPKE_STATIC_PUBLIC_KEY (optional
  */
 import { Environment, GodarkClient } from '@godark/sdk';
 
@@ -65,14 +65,15 @@ async function main(): Promise<void> {
       orderType: 'LIMIT',
       price: sellPx,
       quantity: 0.01,
+      postOnly: true,
     });
     console.log(`Place OK -- order_id=${ack.orderId} (limit SELL @ ${sellPx}, mark=${mark})`);
 
     // Allow the resting order to settle before cancel (avoids CANCEL_TOO_SOON).
     await new Promise((r) => setTimeout(r, 500));
 
-    const cancel = await client.cancelOrder(ack.orderId, SYMBOL);
-    console.log(`Cancel OK -- order_id=${cancel.orderId}`);
+    const cancel = await client.cancelAllOrders(SYMBOL);
+    console.log(`cancel_all OK -- count=${cancel.count} ids=[${cancel.orderIds.join(', ')}]`);
 
     await client.disconnect();
     console.log('Disconnected');

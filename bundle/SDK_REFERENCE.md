@@ -37,7 +37,7 @@ The MM examples expect:
 - `GODARK_API_KEY_ID` (required)
 - `GODARK_API_SECRET` (required)
 - `GODARK_PASSPHRASE` (required for API key-pair auth)
-- `GDX_NOISE_STATIC_PUBLIC_KEY` (required for encrypted WebSocket trading) — 64 hex chars; aliases `GDX_NOISE_STATIC_PUBKEY`, `GODARK_NOISE_STATIC_PUBLIC_KEY`
+- `GDX_HPKE_STATIC_PUBLIC_KEY` (required for encrypted WebSocket trading) — 64 hex chars; aliases `GDX_HPKE_STATIC_PUBKEY`, `GODARK_HPKE_STATIC_PUBLIC_KEY`
 - `GODARK_EDGE_URL` (optional, defaults to `wss://api.godark-dex.com`)
 
 Use `.env.example` as the template for your local `.env`. The OS environment always wins over `.env`.
@@ -118,14 +118,14 @@ All numeric fields that may overflow `Number.MAX_SAFE_INTEGER` (e.g. `orderId`, 
 String unions used by the public API:
 
 - `Side`: `'BUY'`, `'SELL'`
-- `OrderType`: `'MARKET'`, `'LIMIT'`, `'PEG_TO_MID'`, `'PEG_TO_BID'`, `'PEG_TO_ASK'`
+- `OrderType`: `'MARKET'`, `'LIMIT'`, `'PEG'`, `'STOP_MARKET'`, `'STOP_LIMIT'`
 - `TimeInForce`: `'GTC'`, `'IOC'`, `'FOK'`, `'GTD'`
 - `OrderStatus`: `'NEW'`, `'PARTIALLY_FILLED'`, `'FILLED'`, `'CANCELLED'`, `'REJECTED'`
 - `OrderUpdateType`: `'OPEN'`, `'FILLED'`, `'PARTIALLY_FILLED'`, `'CANCELLED'`, `'REJECTED'`, `'MODIFIED'`, `'CANCEL_REJECTED'`, `'MODIFY_REJECTED'`
 - `PositionUpdateType`: `'SNAPSHOT'`, `'OPEN'`, `'INCREASE'`, `'DECREASE'`, `'CLOSE'`
-- `CancelReason`: `'USER_REQUESTED'`, `'IOC_REMAINDER'`, `'FOK_NOT_FILLED'`, `'EXPIRED'`, `'SYSTEM'`
+- `CancelReason`: `'USER_REQUESTED'`, `'IOC_REMAINDER'`, `'FOK_NOT_FILLED'`, `'EXPIRED'`, `'SYSTEM'`, `'ADL'`, `'LIQUIDATED_CANCELED'`, `'MARGIN_CANCELED'`, `'REDUCE_ONLY'`, `'STP_EXPIRE_TAKER'`, `'STP_CANCEL_RESTING'`
 
-Note: the SDK accepts additional order types (`PEG_TO_*`) for compatibility with future variants, but this MM distribution supports placing only `MARKET` and `LIMIT` orders.
+`PlaceOrderOptions` accepts `reduceOnly`, `postOnly`, `stpMode`, `pegOffsetBps`, `triggerPrice`, `takeProfitPrice`, and `stopLossPrice`. `PEG` pegs to the Pyth oracle mark.
 
 ## Errors
 

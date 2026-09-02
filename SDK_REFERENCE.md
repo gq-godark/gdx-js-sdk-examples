@@ -40,7 +40,7 @@ The MM examples expect:
 - `GODARK_API_KEY_ID` (required)
 - `GODARK_API_SECRET` (required)
 - `GODARK_PASSPHRASE` (required for API key-pair auth)
-- `GDX_NOISE_STATIC_PUBLIC_KEY` (required for encrypted WebSocket trading) — sequencer static X25519 public key (64 hex chars). Aliases: `GDX_NOISE_STATIC_PUBKEY`, `GODARK_NOISE_STATIC_PUBLIC_KEY`. Or set `noiseStaticPublicKeyHex` on `GodarkClientOptions`.
+- `GDX_HPKE_STATIC_PUBLIC_KEY` (required for encrypted WebSocket trading) — sequencer static X25519 public key (64 hex chars). Aliases: `GDX_HPKE_STATIC_PUBKEY`, `GODARK_HPKE_STATIC_PUBLIC_KEY`. Or set `hpkeStaticPublicKeyHex` on `GodarkClientOptions`.
 - `GODARK_EDGE_URL` (optional, defaults to `wss://api.godark-dex.com`)
 
 Use `.env.example` as the template for your local `.env`. The shared helper `examples/dotenv.ts` (`loadDotenv` + `printOrderError`) is reused by both example scripts.
@@ -96,7 +96,7 @@ To consume `@godark/sdk` from your own project outside this repo:
 | `cancelOrder` | `cancelOrder(orderId: string, symbol: string) -> Promise<OrderAck>`                                                   | Cancel an open order                     |
 | `massQuote`  | `massQuote(symbol, legs, postOnly?): Promise<MassQuoteAck>` | Bulk cancel-replace ladder |
 | `batchCancel` | `batchCancel(symbol, orderIds): Promise<BatchCancelAck>` | Cancel multiple resting orders |
-| `modifyOrder` | `modifyOrder(orderId: string, symbol: string, opts: ModifyOrderOptions) -> Promise<OrderAck>`                         | Modify an open order's price / quantity  |
+| `modifyOrder` | `modifyOrder(orderId: string, symbol: string, opts: ModifyOrderOptions) -> Promise<OrderAck>`                         | Modify price, quantity, and/or stop trigger (`newTriggerPrice`) |
 
 ### Subscriptions
 
@@ -197,14 +197,16 @@ Per-fill delta. Use this stream to drive incremental P&L / position accounting b
 String unions exposed by the public API:
 
 - `Side`: `'BUY'`, `'SELL'`
-- `OrderType`: `'MARKET'`, `'LIMIT'`, `'PEG_TO_MID'`, `'PEG_TO_BID'`, `'PEG_TO_ASK'`
+- `OrderType`: `'MARKET'`, `'LIMIT'`, `'PEG'`, `'STOP_MARKET'`, `'STOP_LIMIT'`
 - `TimeInForce`: `'GTC'`, `'IOC'`, `'FOK'`, `'GTD'`
 - `OrderStatus`: `'NEW'`, `'PARTIALLY_FILLED'`, `'FILLED'`, `'CANCELLED'`, `'REJECTED'`
 - `OrderUpdateType`: `'OPEN'`, `'FILLED'`, `'PARTIALLY_FILLED'`, `'CANCELLED'`, `'REJECTED'`, `'MODIFIED'`, `'CANCEL_REJECTED'`, `'MODIFY_REJECTED'`
 - `PositionUpdateType`: `'SNAPSHOT'`, `'OPEN'`, `'INCREASE'`, `'DECREASE'`, `'CLOSE'`
-- `CancelReason`: `'USER_REQUESTED'`, `'IOC_REMAINDER'`, `'FOK_NOT_FILLED'`, `'EXPIRED'`, `'SYSTEM'`
+- `CancelReason`: `'USER_REQUESTED'`, `'IOC_REMAINDER'`, `'FOK_NOT_FILLED'`, `'EXPIRED'`, `'SYSTEM'`, `'ADL'`, `'LIQUIDATED_CANCELED'`, `'MARGIN_CANCELED'`, `'REDUCE_ONLY'`, `'STP_EXPIRE_TAKER'`, `'STP_CANCEL_RESTING'`
 
-`OrderType` includes the `PEG_TO_*` variants for API completeness, but this MM distribution only exercises `'MARKET'` and `'LIMIT'` from the examples.
+`PlaceOrderOptions` (on `placeOrder`) also accepts `reduceOnly`, `postOnly`, `stpMode`, `pegOffsetBps` (signed bps vs Pyth mark for `PEG`), `triggerPrice` (mark trigger for stops), `takeProfitPrice`, and `stopLossPrice`.
+
+`PEG` pegs to the Pyth oracle mark (not book mid/bid/ask). Use `pegOffsetBps` or an absolute `price` offset.
 
 Note: the SDK additionally exposes parallel `*_FROM_PROTO` / `*_TO_PROTO` lookup tables (e.g. `RESPONSE_MESSAGE_TYPE_TO_PROTO`) for advanced users who want to construct or parse encrypted-edge frames directly. These are stable, but ordinary callers should not need them.
 
