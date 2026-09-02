@@ -63,6 +63,17 @@ async function main(): Promise<void> {
       console.log(`getAccount skipped: ${err instanceof Error ? err.message : err}`);
     }
 
+    try {
+      const lev = await client.getLeverage();
+      console.log(`leverage settings: ${lev.settings.length} entries`);
+      console.log('  (WS push: onLeverageSettings in full-trader-example.ts)');
+      for (const row of lev.settings.slice(0, 5)) {
+        console.log(`  symbol_id=${row.symbolId} leverage=${row.leverage}`);
+      }
+    } catch (err) {
+      console.log(`getLeverage skipped: ${err instanceof Error ? err.message : err}`);
+    }
+
     console.log('REST reads succeeded.');
     console.log('For REST trading (place/modify/cancel), see full-trader-rest.ts.');
   } catch (err) {
