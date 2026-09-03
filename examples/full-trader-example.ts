@@ -14,7 +14,6 @@ import {
   Environment,
   GodarkClient,
   GodarkError,
-  MarketDataClient,
   type FundingRateUpdate,
   type LeverageSettings,
   type MassQuoteLegInput,
@@ -41,7 +40,7 @@ function envTruthy(names: readonly string[]): boolean {
 }
 
 const EDGE_OVERRIDE = envFirst(['GODARK_EDGE_URL', 'GDX_EDGE_URL'], '');
-/** Resolved edge for logging / market-data (Testnet default when unset). */
+/** Resolved edge for logging (Testnet default when unset). */
 const EDGE_URL = EDGE_OVERRIDE || 'wss://api.godark-dex.com';
 
 const tlsSkip = envTruthy(['GODARK_TLS_SKIP_VERIFY', 'GDX_TLS_SKIP_VERIFY']);
@@ -50,7 +49,8 @@ const transportOptions: TransportOptions = {
   headers: { 'X-Trader-Tag': 'js-full-trader-demo' },
   commandTimeout: 10_000,
   heartbeatInterval: 30_000,
-  staleTimeout: 60_000,
+  staleTimeout: 120_000,
+  missedHeartbeatLimit: 2,
   wsOptions: {
     maxPayload: 65_536,
     handshakeTimeout: 10_000,
@@ -62,8 +62,6 @@ const orderLog: OrderUpdate[] = [];
 const positionLog: PositionUpdate[] = [];
 let fundingCount = 0;
 let leverageCount = 0;
-
-let bestAsk: number | null = null;
 
 function onFunding(update: FundingRateUpdate): void {
   fundingCount += 1;
@@ -109,24 +107,6 @@ function onReconnect(): void {
 
 function onError(err: GodarkError): void {
   console.error('SDK ERROR (non-fatal):', err.name, err.message);
-}
-
-function onOrderbook(msg: Record<string, unknown>): void {
-  const asks = msg.asks as unknown;
-  if (Array.isArray(asks) && asks.length > 0) {
-    const first = asks[0] as unknown;
-    if (Array.isArray(first)) {
-      bestAsk = Number(first[0]);
-    } else if (first && typeof first === 'object' && 'price' in (first as object)) {
-      bestAsk = Number((first as { price?: string }).price);
-    }
-  }
-}
-
-function onTrade(msg: Record<string, unknown>): void {
-  console.log(
-    `TRADE  price=${String(msg.price)}  size=${String(msg.size)}  side=${String(msg.side)}`,
-  );
 }
 
 function makeClient(): GodarkClient {
@@ -183,17 +163,21 @@ async function drainOrderUpdatesForMs(
   let count = 0;
   const iter = client.orderUpdates();
   const deadline = Date.now() + ms;
-  while (Date.now() < deadline) {
-    const step = await Promise.race([
-      iter.next(),
-      new Promise<IteratorResult<OrderUpdate>>((resolve) =>
-        setTimeout(() => resolve({ done: true, value: undefined }), 80),
-      ),
-    ]);
-    if (step.done || !('value' in step) || step.value === undefined) break;
-    count += 1;
-    const u = step.value;
-    console.log(`  (queued) order_id=${u.orderId} status=${u.status}`);
+  try {
+    while (Date.now() < deadline) {
+      const step = await Promise.race([
+        iter.next(),
+        new Promise<IteratorResult<OrderUpdate>>((resolve) =>
+          setTimeout(() => resolve({ done: true, value: undefined }), 80),
+        ),
+      ]);
+      if (step.done || !('value' in step) || step.value === undefined) break;
+      count += 1;
+      const u = step.value;
+      console.log(`  (queued) order_id=${u.orderId} status=${u.status}`);
+    }
+  } finally {
+    await iter.return?.();
   }
   return count;
 }
@@ -232,20 +216,6 @@ async function runStrategy(): Promise<void> {
   await client.subscribe(['orders', 'positions', 'funding_rate']);
   console.log('Subscribed to order + position + funding updates');
 
-  const md = new MarketDataClient(EDGE_URL, {
-    headers: { 'X-Trader-Tag': 'js-md-demo' },
-    wsOptions: tlsSkip ? { rejectUnauthorized: false } : undefined,
-  });
-  try {
-    await md.connect();
-    await md.subscribeOrderbook(SYMBOL, onOrderbook);
-    await md.subscribeTrades(SYMBOL, onTrade);
-    console.log(`Market data streaming for ${SYMBOL}`);
-    if (bestAsk !== null) console.log(`  (best ask snapshot) ${bestAsk}`);
-  } catch (e: unknown) {
-    console.warn('Market data unavailable (continuing without):', e);
-  }
-
   // Leverage updates are available via GodarkRestClient.updateLeverage (REST one-shot HPKE).
   console.log('Skipping leverage update in WS example (use full-trader-rest for REST leverage).');
 
@@ -266,7 +236,6 @@ async function runStrategy(): Promise<void> {
   } catch (e: unknown) {
     if (e instanceof GodarkError) {
       printOrderError('BUY', e);
-      await md.disconnect().catch(() => {});
       await client.disconnect();
       return;
     }
@@ -322,10 +291,8 @@ async function runStrategy(): Promise<void> {
   // Pass postOnly: false for the relaxed path, where a crossing leg takes
   // liquidity up to its limit and rests the remainder (the number of taker
   // fills is reported per leg as fillCount).
-  // Anchor ladder/cross to live best ask when available; else GDX_BASE.
-  const base =
-    (bestAsk !== null && bestAsk > 0 ? bestAsk : Number(process.env.GDX_BASE ?? '64000')) ||
-    64_000;
+  // Anchor ladder/cross prices to GODARK_E2E_PRICE / GDX_LIVE_PRICE (or GDX_BASE).
+  const base = Number(process.env.GDX_BASE ?? String(mark)) || mark;
   const round1 = (x: number) => Math.round(x * 10) / 10;
   console.log(`Mass-quoting a 3-level BUY ladder (post-only), base=${base.toFixed(2)}...`);
   const ladder: MassQuoteLegInput[] = [
@@ -433,7 +400,6 @@ async function runStrategy(): Promise<void> {
   console.log(`  Leverage settings received:            ${leverageCount}`);
   console.log('='.repeat(60));
 
-  await md.disconnect().catch(() => {});
   await client.disconnect();
   console.log('Disconnected cleanly');
 }
@@ -446,10 +412,12 @@ function main(): void {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
-  runStrategy().catch((e: unknown) => {
-    console.error(e);
-    process.exit(1);
-  });
+  runStrategy()
+    .then(() => process.exit(0))
+    .catch((e: unknown) => {
+      console.error(e);
+      process.exit(1);
+    });
 }
 
 main();

@@ -82,7 +82,9 @@ The SDK exposes both **callback** and **async-iterator** forms for each push str
 
 ### Error handling
 
-`onError: (err: GodarkError) => void` is set on construction and surfaces non-fatal SDK errors. Fatal errors are thrown from the awaited methods (`connect`, `placeOrder`, `cancelOrder`, `modifyOrder`, `subscribe`, `disconnect`).
+`onError: (err: GodarkError) => void` is set on construction and surfaces non-fatal SDK errors (including stale heartbeat disconnects as `ConnectionError`). Fatal errors are thrown from the awaited methods (`connect`, `placeOrder`, `cancelOrder`, `modifyOrder`, `subscribe`, `disconnect`).
+
+**Heartbeat defaults:** ping every 30s, absolute stale timeout 120s, disconnect after 2 consecutive heartbeat intervals with no inbound traffic. Override via `transportOptions` on `GodarkClient` or `MarketDataClient`.
 
 ### Concurrency rule
 
