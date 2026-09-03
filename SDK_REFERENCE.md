@@ -152,6 +152,8 @@ await md.disconnect();
 
 The same `TransportOptions` shape used by `GodarkClient` is accepted by the `MarketDataClient` constructor; reuse it for proxy / TLS options.
 
+**Heartbeat defaults (trading and market data):** ping every `30_000` ms, absolute stale timeout `120_000` ms, disconnect after `2` consecutive heartbeat intervals with no inbound traffic. Stale disconnects on the trading client emit a non-fatal `ConnectionError` through `onError` before auto-reconnect runs.
+
 ## GodarkRestClient (HTTP path, not exercised by the bundled examples)
 
 `GodarkRestClient` remains exported from the npm tarball for identity/balance helpers, but encrypted REST trading is not supported — place / modify / cancel / mass-quote must use `GodarkClient` over HPKE WebSocket.
