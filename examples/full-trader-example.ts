@@ -257,6 +257,25 @@ async function runStrategy(): Promise<void> {
 
   await new Promise((r) => setTimeout(r, 1000));
 
+  // Market IOC with explicit walk cap: 50 bps = 0.5% of mark (UI default).
+  // Omit slippageBps → venue max (localnet 5%).
+  console.log('Placing market IOC BUY qty=0.01 with slippageBps=50 (0.5% walk)...');
+  try {
+    const mktAck = await client.placeOrder({
+      symbol: SYMBOL,
+      side: 'BUY',
+      orderType: 'MARKET',
+      quantity: 0.01,
+      timeInForce: 'IOC',
+      slippageBps: 50,
+    });
+    console.log(`MARKET BUY placed: order_id=${mktAck.orderId}`);
+  } catch (e: unknown) {
+    printOrderError('Market BUY rejected (continuing)', e);
+  }
+
+  await new Promise((r) => setTimeout(r, 1000));
+
   const sellPx = Math.round(mark * 1.03 * 10) / 10;
   console.log(`Placing limit SELL @ ${sellPx}...`);
   try {
