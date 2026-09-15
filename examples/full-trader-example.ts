@@ -222,7 +222,7 @@ async function runStrategy(): Promise<void> {
   const mark = Number(envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'));
   const buyPx = Math.round(mark * 0.997 * 10) / 10;
   console.log(`Placing limit BUY @ ${buyPx} (mark=${mark})...`);
-  let buyAck: OrderAck;
+  let buyAck: OrderAck | undefined;
   try {
     buyAck = await client.placeOrder({
       symbol: SYMBOL,
@@ -235,24 +235,43 @@ async function runStrategy(): Promise<void> {
     console.log(`BUY placed: order_id=${buyAck.orderId}  sequence=${buyAck.sequence}`);
   } catch (e: unknown) {
     if (e instanceof GodarkError) {
-      printOrderError('BUY', e);
-      await client.disconnect();
-      return;
+      printOrderError('BUY rejected (continuing to market Place)', e);
+    } else {
+      throw e;
     }
-    throw e;
   }
 
   await new Promise((r) => setTimeout(r, 1000));
 
-  const modifyPx = Math.round(mark * 0.996 * 10) / 10;
-  console.log(`Modifying order price to ${modifyPx}...`);
+  if (buyAck) {
+    const modifyPx = Math.round(mark * 0.996 * 10) / 10;
+    console.log(`Modifying order price to ${modifyPx}...`);
+    try {
+      const modAck = await client.modifyOrder(buyAck.orderId, SYMBOL, {
+        newPrice: modifyPx,
+      });
+      console.log(`Modified: order_id=${modAck.orderId}`);
+    } catch (e: unknown) {
+      printOrderError('MODIFY (may have filled before modify took)', e);
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
+  // Market IOC with explicit walk cap: 50 bps = 0.5% of mark (UI default).
+  // Omit slippageBps → venue max (localnet 5%).
+  console.log('Placing market IOC BUY qty=0.01 with slippageBps=50 (0.5% walk)...');
   try {
-    const modAck = await client.modifyOrder(buyAck.orderId, SYMBOL, {
-      newPrice: modifyPx,
+    const mktAck = await client.placeOrder({
+      symbol: SYMBOL,
+      side: 'BUY',
+      orderType: 'MARKET',
+      quantity: 0.01,
+      timeInForce: 'IOC',
+      slippageBps: 50,
     });
-    console.log(`Modified: order_id=${modAck.orderId}`);
+    console.log(`MARKET BUY placed: order_id=${mktAck.orderId}`);
   } catch (e: unknown) {
-    printOrderError('MODIFY (may have filled before modify took)', e);
+    printOrderError('Market BUY rejected (continuing)', e);
   }
 
   await new Promise((r) => setTimeout(r, 1000));
@@ -384,12 +403,14 @@ async function runStrategy(): Promise<void> {
     await new Promise((r) => setTimeout(r, 500));
   }
 
-  console.log('Cancelling original BUY (cleanup)...');
-  try {
-    await client.cancelOrder(buyAck.orderId, SYMBOL);
-    console.log('Original BUY cancelled');
-  } catch {
-    console.log('Original BUY already filled or cancelled');
+  if (buyAck) {
+    console.log('Cancelling original BUY (cleanup)...');
+    try {
+      await client.cancelOrder(buyAck.orderId, SYMBOL);
+      console.log('Original BUY cancelled');
+    } catch {
+      console.log('Original BUY already filled or cancelled');
+    }
   }
 
   console.log('='.repeat(60));
