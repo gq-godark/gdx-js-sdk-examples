@@ -127,7 +127,7 @@ String unions used by the public API:
 - `PositionUpdateType`: `'SNAPSHOT'`, `'OPEN'`, `'INCREASE'`, `'DECREASE'`, `'CLOSE'`
 - `CancelReason`: `'USER_REQUESTED'`, `'IOC_REMAINDER'`, `'FOK_NOT_FILLED'`, `'EXPIRED'`, `'SYSTEM'`, `'ADL'`, `'LIQUIDATED_CANCELED'`, `'MARGIN_CANCELED'`, `'REDUCE_ONLY'`, `'STP_EXPIRE_TAKER'`, `'STP_CANCEL_RESTING'`
 
-`PlaceOrderOptions` accepts `reduceOnly`, `postOnly`, `stpMode`, `pegOffsetBps`, `triggerPrice`, `takeProfitPrice`, and `stopLossPrice`. `PEG` pegs to the Pyth oracle mark.
+`PlaceOrderOptions` accepts `reduceOnly`, `postOnly`, `stpMode`, `pegOffsetBps`, `triggerPrice`, `takeProfitPrice`, `stopLossPrice`, and `slippageBps`. Omit `slippageBps` to use the venue max walk cap (localnet 5%); typical explicit values are 50–500 bps (0.5%–5%). `PEG` pegs to the Pyth oracle mark.
 
 ## Errors
 
