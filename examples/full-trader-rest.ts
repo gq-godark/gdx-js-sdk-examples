@@ -41,7 +41,7 @@ async function main(): Promise<void> {
 
   await client.connect();
   console.log('identity', {
-    userUuid: client.authenticatedUserUuid,
+    account: client.authenticatedAccount,
     tokenScope: client.tokenScope,
   });
 
@@ -50,7 +50,7 @@ async function main(): Promise<void> {
   const positions = await client.getPositions();
   console.log('positions', positions.rows.length);
   const account = await client.getAccount();
-  console.log('account', account.account?.totalCollateral);
+  console.log('account', account.summary?.totalCollateral);
 
   const mark = Number(process.env.GDX_LIVE_PRICE ?? '78000');
   const price = mark - 5000;

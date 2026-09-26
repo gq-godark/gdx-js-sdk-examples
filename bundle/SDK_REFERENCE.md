@@ -53,7 +53,7 @@ Use `.env.example` as the template for your local `.env`. The OS environment alw
 | constructor   | `new GodarkClient(opts: GodarkClientOptions)`               | Construct the client                                 |
 | `connect`     | `connect(): Promise<void>`                                  | Authenticate + HPKE setup handshake + encrypted session           |
 | `disconnect`  | `disconnect(): Promise<void>`                               | Graceful disconnect                                  |
-| `userUuid`    | `readonly userUuid: string \| undefined`                    | Authenticated user id (populated after `connect`)    |
+| `account`     | `readonly account: string \| undefined`                     | Authenticated Solana L2 account                      |
 
 ### Trading commands
 
@@ -118,8 +118,8 @@ await md.disconnect();
 | Type             | Notable fields                                                                                                                                                |
 |------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `OrderAck`       | `orderId`, `success`, `sequence`, `errorCode?: string`, `error?: string`                                                                                      |
-| `OrderUpdate`    | `orderId`, `userUuid`, `symbolId`, `side`, `status`, `updateType`, `price`, `quantity`, `filledQty`, `remainingQty`, `cumFill`, `cancelReason?`, `timestamp`  |
-| `PositionUpdate` | `userUuid`, `symbolId`, `side`, `updateType`, `size`, `entryPrice`, `previousSize`, `fillPrice`, `fillQty`, `correlationId`, `timestamp`                      |
+| `OrderUpdate`    | `orderId`, `account`, `symbolId`, `side`, `status`, `updateType`, `price`, `quantity`, `filledQty`, `remainingQty`, `cumFill`, `cancelReason?`, `timestamp`   |
+| `PositionUpdate` | `account`, `symbolId`, `side`, `updateType`, `size`, `entryPrice`, `previousSize`, `fillPrice`, `fillQty`, `correlationId`, `timestamp`                       |
 
 All numeric fields that may overflow `Number.MAX_SAFE_INTEGER` (e.g. `orderId`, `price`, `quantity`, `filledQty`) are returned as decimal strings; convert with `BigInt(...)` when you need arithmetic.
 

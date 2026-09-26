@@ -58,7 +58,7 @@ async function main(): Promise<void> {
 
     try {
       const account = await client.getAccount();
-      console.log('account', account.account?.totalCollateral);
+      console.log('account', account.summary?.totalCollateral);
     } catch (err) {
       console.log(`getAccount skipped: ${err instanceof Error ? err.message : err}`);
     }

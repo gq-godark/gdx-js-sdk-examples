@@ -85,7 +85,7 @@ To consume `@godark/sdk` from your own project outside this repo:
 | constructor  | `new GodarkClient(opts: GodarkClientOptions)`                   | Construct the client                          |
 | `connect`    | `connect(): Promise<void>`                                      | Authenticate + HPKE setup handshake + encrypted session |
 | `disconnect` | `disconnect(): Promise<void>`                                   | Graceful disconnect                           |
-| `userUuid`   | `readonly userUuid: string \| undefined`                        | Authenticated user id (set after `connect`)   |
+| `account`    | `readonly account: string \| undefined`                         | Authenticated Solana L2 account               |
 
 ### Trading commands
 
@@ -187,7 +187,7 @@ The same `TransportOptions` shape used by `GodarkClient` is accepted by the `Mar
 
 | Field                                                   | Type                          | Notes                                                |
 |---------------------------------------------------------|-------------------------------|------------------------------------------------------|
-| `orderId`, `userUuid`, `symbolId`                       | identifiers                   | —                                                    |
+| `orderId`, `account`, `symbolId`                        | identifiers                   | —                                                    |
 | `side`                                                  | `Side`                        | `'BUY'` / `'SELL'`                                   |
 | `status`, `updateType`                                  | `OrderStatus`, `OrderUpdateType` | Final state vs. lifecycle event                   |
 | `price`, `quantity`, `filledQty`, `remainingQty`, `cumFill` | `string`                  | Decimal strings to preserve precision                |
@@ -202,7 +202,7 @@ Per-fill delta. Use this stream to drive incremental P&L / position accounting b
 
 | Field                                                          | Type                  |
 |----------------------------------------------------------------|-----------------------|
-| `userUuid`, `symbolId`, `side`                                 | identifiers           |
+| `account`, `symbolId`, `side`                                  | identifiers           |
 | `updateType`                                                   | `PositionUpdateType`  |
 | `size`, `entryPrice`, `previousSize`, `fillPrice`, `fillQty`   | `string` (decimal)    |
 | `correlationId`, `timestamp`                                   | `number`              |

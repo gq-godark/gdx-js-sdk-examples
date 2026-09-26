@@ -132,8 +132,8 @@ function makeClient(): GodarkClient {
     return new GodarkClient({
       ...common,
       apiKey: legacyKey,
-      ...(envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '')
-        ? { userUuid: envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '') }
+      ...(envFirst(['GODARK_ACCOUNT', 'GDX_ACCOUNT'], '')
+        ? { account: envFirst(['GODARK_ACCOUNT', 'GDX_ACCOUNT'], '') }
         : {}),
     });
   }
@@ -207,7 +207,7 @@ async function runStrategy(): Promise<void> {
   }
 
   console.log(
-    `Authenticated as user_uuid=${client.userUuid}  (HPKE session, buffer=${STREAM_BUFFER})`,
+    `Authenticated as account=${client.account}  (HPKE session, buffer=${STREAM_BUFFER})`,
   );
 
   await client.subscribe(['orders', 'positions', 'funding_rate']);
