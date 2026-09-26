@@ -62,6 +62,10 @@ Use `.env.example` as the template for your local `.env`. The OS environment alw
 | `placeOrder`   | `placeOrder(opts: PlaceOrderOptions) -> Promise<OrderAck>`                                                            | Encrypted order placement                    |
 | `cancelOrder`  | `cancelOrder(orderId: string, symbol: string) -> Promise<OrderAck>`                                                   | Cancel an open order                         |
 | `modifyOrder`  | `modifyOrder(orderId: string, symbol: string, opts: ModifyOrderOptions) -> Promise<OrderAck>`                         | Modify an open order's price / quantity      |
+| `updateLeverage` | `updateLeverage(symbol, leverage) -> Promise<OrderAck>` | Set per-market leverage |
+| `massQuote` / `batchCancel` / `batchModify` | batch command methods | Manage multiple resting orders |
+| `cancelAllOrders` / `closeAll` / `reversePosition` | account-wide command methods | Bulk order/position management |
+| `amendTpsl` / `cancelTpsl` | TP/SL command methods | Manage attached TP/SL |
 
 ### Subscriptions
 
@@ -78,6 +82,10 @@ The SDK exposes both **callback** and **async-iterator** forms for each push str
 |-----------------------------------------------|---------------------------------------|-----------------------------------------------------|
 | `onOrderUpdate((u: OrderUpdate) => void)`     | `orderUpdates(): AsyncIterableIterator<OrderUpdate>`     | Order lifecycle (open / filled / cancelled / ...)   |
 | `onPositionUpdate((u: PositionUpdate) => void)` | `positionUpdates(): AsyncIterableIterator<PositionUpdate>` | Per-fill position deltas                            |
+| `onPositionsSnapshot(...)` | `positionsSnapshots()` | Full positions snapshots |
+| `onOpenOrdersSnapshot(...)` | `openOrdersSnapshots()` | Full open-orders snapshots |
+| `onFundingRateUpdate(...)` | `fundingRateUpdates()` | Funding-rate updates |
+| `onLeverageSettings(...)` | `leverageSettingsUpdates()` | Leverage settings |
 | `onReconnect(() => void)`                     | (no iterator form)                    | Fired after auto-reconnect re-subscribes channels   |
 
 ### Error handling
@@ -88,7 +96,7 @@ The SDK exposes both **callback** and **async-iterator** forms for each push str
 
 ### Concurrency rule
 
-Only one trading command (`placeOrder`, `cancelOrder`, `modifyOrder`) should be in flight at a time. The example scripts await each call in sequence; do the same in your own code.
+Trading commands may be in flight concurrently. The SDK serializes HPKE nonce assignment and resolves encrypted acknowledgements by correlation ID. The examples await commands sequentially for readability.
 
 ## MarketDataClient API
 

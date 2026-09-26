@@ -40,7 +40,7 @@ The MM examples expect:
 - `GODARK_API_KEY_ID` (required)
 - `GODARK_API_SECRET` (required)
 - `GODARK_PASSPHRASE` (required for API key-pair auth)
-- `GDX_HPKE_STATIC_PUBLIC_KEY` (required for encrypted WebSocket trading) — sequencer static X25519 public key (64 hex chars). Aliases: `GDX_HPKE_STATIC_PUBKEY`, `GODARK_HPKE_STATIC_PUBLIC_KEY`. Or set `hpkeStaticPublicKeyHex` on `GodarkClientOptions`.
+- `GDX_HPKE_STATIC_PUBLIC_KEY` (required for Localnet; Testnet and Devnet pins are baked in) — sequencer static X25519 public key (64 hex chars). Aliases: `GDX_HPKE_STATIC_PUBKEY`, `GODARK_HPKE_STATIC_PUBLIC_KEY`. Or set `hpkeStaticPublicKeyHex` on `GodarkClientOptions`.
 - `GODARK_EDGE_URL` (optional, defaults to `wss://api.godark-dex.com`)
 
 Use `.env.example` as the template for your local `.env`. The shared helper `examples/dotenv.ts` (`loadDotenv` + `printOrderError`) is reused by both example scripts.
@@ -97,6 +97,13 @@ To consume `@godark/sdk` from your own project outside this repo:
 | `massQuote`  | `massQuote(symbol, legs, postOnly?): Promise<MassQuoteAck>` | Bulk cancel-replace ladder |
 | `batchCancel` | `batchCancel(symbol, orderIds): Promise<BatchCancelAck>` | Cancel multiple resting orders |
 | `modifyOrder` | `modifyOrder(orderId: string, symbol: string, opts: ModifyOrderOptions) -> Promise<OrderAck>`                         | Modify price, quantity, and/or stop trigger (`newTriggerPrice`) |
+| `batchModify` | `batchModify(symbol, legs): Promise<BatchModifyAck>` | Modify multiple resting orders |
+| `cancelAllOrders` | `cancelAllOrders(symbol?): Promise<CountAck>` | Cancel one market or all markets |
+| `closeAll` | `closeAll(symbol?): Promise<CountAck>` | Close one market or all positions |
+| `reversePosition` | `reversePosition(symbol): Promise<CountAck>` | Flatten and reverse a position |
+| `amendTpsl` | `amendTpsl(opts): Promise<TpslAck>` | Attach or amend TP/SL |
+| `cancelTpsl` | `cancelTpsl(opts): Promise<TpslAck>` | Cancel TP/SL without cancelling the parent |
+| `logout` | `logout(): Promise<void>` | Revoke the session and disconnect |
 
 ### Subscriptions
 
@@ -113,9 +120,15 @@ The SDK exposes both **callback** and **async-iterator** forms for each private 
 |---------------------------------------------------|-----------------------------------------------------------------|-----------------------------------------------------|
 | `onOrderUpdate((u: OrderUpdate) => void)`         | `orderUpdates(): AsyncIterableIterator<OrderUpdate>`            | Order lifecycle (`OPEN` / `FILLED` / ...)           |
 | `onPositionUpdate((u: PositionUpdate) => void)`   | `positionUpdates(): AsyncIterableIterator<PositionUpdate>`      | Per-fill position deltas                            |
+| `onPositionsSnapshot(...)`                       | `positionsSnapshots()`                                         | Full positions snapshots                           |
+| `onOpenOrdersSnapshot(...)`                      | `openOrdersSnapshots()`                                        | Full open-orders snapshots                         |
+| `onSystemHealth(...)`                            | `systemHealthUpdates()`                                        | Sequencer health                                   |
+| `onBalanceUpdate(...)`                           | `balanceUpdates()`                                             | Collateral balance                                 |
+| `onFundingRateUpdate(...)`                       | `fundingRateUpdates()`                                         | Funding rates                                      |
+| `onLeverageSettings(...)`                        | `leverageSettingsUpdates()`                                    | Per-market leverage settings                       |
 | `onReconnect(() => void)`                         | (no iterator form)                                              | Fired after auto-reconnect re-subscribes channels   |
 
-The iterator form uses an internal **bounded ring buffer** (size controlled by `streamBufferSize` on the constructor; default `256`). When the buffer is full, the oldest item is dropped — see the queue semantics described in the source. The callback form has no buffer and runs synchronously on the transport task, so callbacks should never block.
+The iterator form uses an internal **bounded ring buffer** (size controlled by `streamBufferSize` on the constructor; default `1024`). When the buffer is full, the oldest item is dropped — see the queue semantics described in the source. The callback form has no buffer and runs synchronously on the transport task, so callbacks should never block.
 
 ### Error sink
 
@@ -130,7 +143,7 @@ const client = new GodarkClient({
 
 ### Concurrency rule
 
-Only one trading command (`placeOrder`, `cancelOrder`, `modifyOrder`) should be in flight at a time. The push streams are independent and may be consumed concurrently — that's the intended pattern in `full-trader-example.ts`, which combines a callback consumer with a short `orderUpdates()` drain.
+Trading commands may be in flight concurrently. The SDK serializes HPKE nonce assignment and resolves encrypted acknowledgements by correlation ID. Push streams are independent and may also be consumed concurrently.
 
 ## MarketDataClient
 
@@ -156,7 +169,7 @@ The same `TransportOptions` shape used by `GodarkClient` is accepted by the `Mar
 
 ## GodarkRestClient (HTTP path, not exercised by the bundled examples)
 
-`GodarkRestClient` remains exported from the npm tarball for identity/balance helpers, but encrypted REST trading is not supported — place / modify / cancel / mass-quote must use `GodarkClient` over HPKE WebSocket.
+`GodarkRestClient` remains exported from the npm tarball. It supports authenticated snapshots (`getOpenOrders`, `getPositions`, `getAccount`), place/cancel/modify, leverage, mass quote, batch cancel/modify, order lookup, and public funding/open-interest/volume reads. The bundled MM flow uses `GodarkClient` over HPKE WebSocket.
 
 ## Core Types
 

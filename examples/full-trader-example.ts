@@ -116,9 +116,6 @@ function makeClient(): GodarkClient {
       'GODARK_HPKE_STATIC_PUBLIC_KEY',
       'GDX_HPKE_STATIC_PUBLIC_KEY',
       'GDX_HPKE_STATIC_PUBKEY',
-      'GODARK_HPKE_STATIC_PUBLIC_KEY',
-      'GDX_HPKE_STATIC_PUBLIC_KEY',
-      'GDX_HPKE_STATIC_PUBKEY',
     ],
     '',
   );
@@ -216,8 +213,9 @@ async function runStrategy(): Promise<void> {
   await client.subscribe(['orders', 'positions', 'funding_rate']);
   console.log('Subscribed to order + position + funding updates');
 
-  // Leverage updates are available via GodarkRestClient.updateLeverage (REST one-shot HPKE).
-  console.log('Skipping leverage update in WS example (use full-trader-rest for REST leverage).');
+  // `client.updateLeverage(SYMBOL, leverage)` is available over this encrypted
+  // WebSocket. This reference flow avoids changing account configuration.
+  console.log('Skipping leverage mutation in the reference flow.');
 
   const mark = Number(envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'));
   const buyPx = Math.round(mark * 0.997 * 10) / 10;
