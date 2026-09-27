@@ -7,7 +7,7 @@ Supported order types in this distribution: `MARKET`, `LIMIT`.
 
 ## Package contents
 
-- `examples/` — `quickstart.ts`, `full-trader-example.ts`, `dotenv.ts`
+- `examples/` — WebSocket and REST examples plus the shared `dotenv.ts` helper
 - `sdk/` — `@godark/sdk` npm tarball (`godark-sdk-*.tgz`)
 - `package.json`, `package-lock.json`, `tsconfig.json`
 - `README.md`, `SDK_REFERENCE.md` — recipient docs
@@ -61,6 +61,8 @@ Available scripts (see `package.json`):
 |---------------------------|-------------------------------------|---------------------------------------------------------------------------------|
 | `npm run quickstart`      | `examples/quickstart.ts`            | Minimal connect → far limit sell → cancel                                       |
 | `npm run full-trader`     | `examples/full-trader-example.ts`   | Reference bot loop: callbacks, market data, place/modify/cancel, mass-quote / batch-cancel |
+| `npm run rest-client`     | `examples/rest-client-example.ts`   | Public REST reads, auth, encrypted snapshots, and leverage                      |
+| `npm run full-trader-rest` | `examples/full-trader-rest.ts`     | One-shot HPKE REST snapshots plus place/modify/cancel                           |
 | `npm run typecheck`       | (all)                               | `tsc --noEmit` — catches API drift after editing your own scripts               |
 
 ## npm integration (your own bot)

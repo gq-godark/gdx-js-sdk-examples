@@ -4,7 +4,7 @@ This is the comprehensive reference for maintainers and developers working *insi
 
 A trimmed, recipient-facing copy is maintained at [`bundle/SDK_REFERENCE.md`](bundle/SDK_REFERENCE.md) and is the one copied into the root of released ZIP bundles as `SDK_REFERENCE.md`. The bundle version intentionally omits sections that recipients don't need (refresh / parity / pin discipline, error-code internals, forward-compat strategy, SDK sourcing options).
 
-> Scope: the MM examples use **WebSocket encrypted trading** via `GodarkClient` plus the public **market-data** feed via `MarketDataClient`. Encrypted REST trading is not supported — all order flow (place / modify / cancel / mass-quote) runs over the HPKE WebSocket client. Order placement support is limited to `MARKET` and `LIMIT`.
+> Scope: the primary MM flow uses persistent HPKE WebSocket trading via `GodarkClient`, plus the public market-data feed via `MarketDataClient`. The SDK also provides `GodarkRestClient` for Bearer-authenticated, one-shot HPKE REST snapshots and supported trading operations. Order placement support in these examples is limited to `MARKET` and `LIMIT`.
 
 ## Quick Start
 
@@ -167,9 +167,11 @@ The same `TransportOptions` shape used by `GodarkClient` is accepted by the `Mar
 
 **Heartbeat defaults (trading and market data):** ping every `30_000` ms, absolute stale timeout `120_000` ms, disconnect after `2` consecutive heartbeat intervals with no inbound traffic. Stale disconnects on the trading client emit a non-fatal `ConnectionError` through `onError` before auto-reconnect runs.
 
-## GodarkRestClient (HTTP path, not exercised by the bundled examples)
+## GodarkRestClient (one-shot HPKE REST)
 
-`GodarkRestClient` remains exported from the npm tarball. It supports authenticated snapshots (`getOpenOrders`, `getPositions`, `getAccount`), place/cancel/modify, leverage, mass quote, batch cancel/modify, order lookup, and public funding/open-interest/volume reads. The bundled MM flow uses `GodarkClient` over HPKE WebSocket.
+`GodarkRestClient` is exported from the npm tarball and demonstrated by the bundled REST examples. After `connect()`, `authenticatedAccount` exposes the canonical Solana account identity (`authenticatedUserUuid` is a deprecated compatibility alias).
+
+Supported authenticated snapshots and reads are `getOpenOrders`, `getPositions`, `getAccount`, `getOrder`, `getOrderByClientOrderId`, and `getLeverage`. Supported encrypted trading methods are `placeOrder`, `cancelOrder`, `cancelOrderByClientId`, `modifyOrder`, `updateLeverage`, `massQuote`, `batchCancel`, and `batchModify`; `awaitTerminalStatus` polls order state. Public reads `getFundingRates`, `getOpenInterest`, and `getVolume` do not require `connect()`. The primary market-maker flow still uses `GodarkClient` because its persistent WebSocket session also carries private push streams.
 
 ## Core Types
 
@@ -275,6 +277,8 @@ The `OrderError.errorCode` field already carries the symbolic string for thrown 
 |------------------------------------------|---------------------------------------------------------------------------------------------------|
 | `examples/quickstart.ts`                 | Minimal connect, place, cancel                                                                    |
 | `examples/full-trader-example.ts`        | Reference bot flow: private streams, market data, place / modify / cancel, mass-quote / batch-cancel |
+| `examples/rest-client-example.ts`        | REST public reads, auth, encrypted account/open-orders snapshots, and leverage                    |
+| `examples/full-trader-rest.ts`           | REST encrypted snapshots plus place / modify / cancel round trip                                  |
 | `examples/dotenv.ts`                     | Shared helper (`loadDotenv` + `printOrderError`)                                                  |
 
 ## SDK source layout (vendored)
@@ -327,6 +331,6 @@ The full upstream-change chain (proto → SDK → examples → release zip):
 3. `.github/workflows/auto-bump-sdk-pin.yml` here refreshes `sdk/`, bumps `sdk/UPSTREAM_REF`, refreshes `package-lock.json`, and opens its own rolling PR.
 4. Merging that PR triggers `release.yml`, which rebuilds the bundle zip from the new pin and publishes a tagged GitHub Release.
 
-## RestClient example
+## RestClient examples
 
-`GodarkRestClient` is exercised by `rest_client_example` / `rest-client-example`: REST auth, `/auth/me`, leverage read, and public funding/OI/volume GETs. Encrypted place/cancel/modify/update-leverage remain WebSocket-only via `GodarkClient`.
+`rest-client-example.ts` demonstrates public funding/OI/volume reads, REST authentication, encrypted account/open-orders snapshots, and leverage reads. `full-trader-rest.ts` demonstrates encrypted snapshots and a place/modify/cancel round trip. Both use the canonical `authenticatedAccount` accessor.

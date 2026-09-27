@@ -1,6 +1,6 @@
 # GoDark JavaScript SDK Reference (MM Distribution)
 
-This reference describes the API surface used by the two example scripts shipped in this distribution. They exercise the WebSocket encrypted-trading path via `GodarkClient` (HPKE WebSocket) plus the public market-data feed via `MarketDataClient`. Encrypted REST trading is not supported — all order flow (place / modify / cancel / mass-quote) runs over the WebSocket client.
+This reference describes the API surface used by the examples shipped in this distribution. The primary market-maker flow uses the persistent HPKE WebSocket client, `GodarkClient`, plus the public market-data feed via `MarketDataClient`. The SDK also provides `GodarkRestClient` for Bearer-authenticated, one-shot HPKE REST snapshots and supported trading operations.
 
 Order placement support in this MM distribution is limited to `MARKET` and `LIMIT`.
 
@@ -113,6 +113,12 @@ await md.subscribeTrades('BTC-USDC-PERP', (msg) => { /* ... */ });
 await md.disconnect();
 ```
 
+## GodarkRestClient API
+
+After `connect()`, `authenticatedAccount` exposes the canonical Solana account identity (`authenticatedUserUuid` is a deprecated compatibility alias).
+
+Authenticated snapshots and reads: `getOpenOrders`, `getPositions`, `getAccount`, `getOrder`, `getOrderByClientOrderId`, and `getLeverage`. Encrypted trading: `placeOrder`, `cancelOrder`, `cancelOrderByClientId`, `modifyOrder`, `updateLeverage`, `massQuote`, `batchCancel`, and `batchModify`. `awaitTerminalStatus` polls order state. Public `getFundingRates`, `getOpenInterest`, and `getVolume` reads require no connection. Use `GodarkClient` when persistent private push streams are required.
+
 ## Core Types
 
 | Type             | Notable fields                                                                                                                                                |
@@ -154,9 +160,11 @@ String unions used by the public API:
 |---------------------------------------|-------------------------------------------------------------------------------------------------------|
 | `examples/quickstart.ts`              | Minimal flow: connect → place limit sell → cancel → disconnect                                        |
 | `examples/full-trader-example.ts`     | Reference bot loop: private streams, market data, place / modify / cancel, mass-quote / batch-cancel |
+| `examples/rest-client-example.ts`     | REST public reads, auth, encrypted account/open-orders snapshots, and leverage                      |
+| `examples/full-trader-rest.ts`        | REST encrypted snapshots plus place / modify / cancel round trip                                    |
 | `examples/dotenv.ts`                  | Shared `.env` loader + `OrderError` pretty-printer used by both example mains                         |
 
-Both example scripts run under `tsx` (a TypeScript runner for Node) via the `npm run quickstart` and `npm run full-trader` scripts. To rebuild your own `.ts` against the bundled SDK, `npm run typecheck` exercises a strict `tsc --noEmit` pass.
+The examples run under `tsx` via `npm run quickstart`, `npm run full-trader`, `npm run rest-client`, and `npm run full-trader-rest`. To check your own `.ts` against the bundled SDK, `npm run typecheck` exercises a strict `tsc --noEmit` pass.
 
 ## npm integration (your own bot)
 

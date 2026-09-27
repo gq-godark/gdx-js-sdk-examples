@@ -2,7 +2,7 @@
 
 This repository is a market-maker-facing distribution for GoDark's JavaScript / TypeScript SDK. It includes:
 
-- two reference TypeScript examples (`quickstart` + `full-trader-example`) plus a shared `.env` helper
+- four reference TypeScript examples (WebSocket and REST flows) plus a shared `.env` helper
 - the full **`@godark/sdk` npm tarball vendored under `sdk/`** — no private npm registry required to install
 - a Node.js `.zip` release pre-built on every push to `main` (no GitHub access required to install from the zip)
 - a simple **`.env`** workflow (no shell `export` required)
@@ -91,6 +91,8 @@ cp .env.example .env
 npm install
 npm run quickstart
 npm run full-trader
+npm run rest-client
+npm run full-trader-rest
 ```
 
 ## Examples
@@ -99,7 +101,8 @@ npm run full-trader
 |-----------------------|-------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------|
 | `quickstart`          | `examples/quickstart.ts`            | Minimal connect → `subscribe(['orders'])` → LIMIT sell far from touch → cancel (book confirmation needs the private orders channel) |
 | `full-trader-example` | `examples/full-trader-example.ts`   | Reference bot flow: private streams, market data, place / modify / cancel, mass-quote / batch-cancel, queue drain |
-| `rest-client-example` | `examples/rest-client-example.ts`   | Residual HTTP: public GETs, auth, me / leverage / balance, HPKE WebSocket note |
+| `rest-client-example` | `examples/rest-client-example.ts`   | Public REST reads, auth, encrypted account/open-orders snapshots, and leverage |
+| `full-trader-rest`    | `examples/full-trader-rest.ts`      | One-shot HPKE REST snapshots plus place / modify / cancel round trip |
 
 Order-type support in this MM distribution is limited to **`MARKET`** and **`LIMIT`**.
 
@@ -117,7 +120,7 @@ UPSTREAM_SRC=/path/to/gdx-js-sdk ./scripts/package.sh gdx-js-sdk-examples-vX.Y.Z
 
 Output lands in the repo root as `<bundle>-node.zip`. The zip includes:
 
-- `examples/quickstart.ts`, `examples/full-trader-example.ts`, `examples/dotenv.ts` — example sources
+- `examples/quickstart.ts`, `examples/full-trader-example.ts`, `examples/rest-client-example.ts`, `examples/full-trader-rest.ts`, `examples/dotenv.ts` — example sources
 - `sdk/godark-sdk-<version>.tgz` + `sdk/UPSTREAM_REF` + `sdk/TARBALL_NAME` — vendored SDK and pin metadata
 - `package.json`, `package-lock.json`, `tsconfig.json` — install + typecheck manifests
 - `README.md`, `SDK_REFERENCE.md` — recipient-facing docs from `bundle/`
@@ -142,7 +145,7 @@ CI publishes a tagged `gdx-js-sdk-examples-*-node.zip` on every push to `main` v
 
 | Path                                          | Purpose                                                                                                                              |
 |-----------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------|
-| `examples/`                                   | Source for runnable MM examples (`quickstart.ts`, `full-trader-example.ts`, `dotenv.ts` helper)                                      |
+| `examples/`                                   | Runnable WebSocket and REST examples plus the shared `dotenv.ts` helper                                                              |
 | `package.json`                                | Examples package; depends on the vendored `@godark/sdk` tarball via `file:./sdk/<tarball>`                                           |
 | `package-lock.json`                           | Lockfile (records the content hash of the vendored tarball; install is fully reproducible)                                           |
 | `tsconfig.json`                               | Strict `tsc --noEmit` typecheck gate                                                                                                 |

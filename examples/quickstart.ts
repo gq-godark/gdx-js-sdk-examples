@@ -9,6 +9,7 @@
  *   GODARK_API_KEY_ID, GODARK_API_SECRET, GODARK_PASSPHRASE
  *   (legacy GDX_* aliases accepted when GODARK_* is unset)
  *   GODARK_EDGE_URL (optional; default Environment.Testnet)
+ *   GODARK_ACCOUNT / GDX_ACCOUNT (optional account fallback for local auth)
  *   GODARK_HPKE_STATIC_PUBLIC_KEY / GDX_HPKE_STATIC_PUBLIC_KEY (optional)
  */
 import {
@@ -59,18 +60,17 @@ async function main(): Promise<void> {
 
   const legacyKey = envFirst(['GODARK_API_KEY', 'GDX_API_KEY']);
   const edge = envFirst(['GODARK_EDGE_URL', 'GDX_EDGE_URL']);
+  const account = envFirst(['GODARK_ACCOUNT', 'GDX_ACCOUNT']);
   const clientOpts: ConstructorParameters<typeof GodarkClient>[0] = {
     environment: Environment.Testnet,
     autoReconnect: true,
     onError: (err) => console.warn('SDK (non-fatal):', err.name, err.message),
     ...(edge ? { baseUrl: edge } : {}),
+    ...(account ? { account } : {}),
   };
   if (legacyKey) {
     Object.assign(clientOpts, {
       apiKey: legacyKey,
-      ...(envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'])
-        ? { userUuid: envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID']) }
-        : {}),
     });
   } else {
     const apiKeyId = envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID']);
@@ -90,7 +90,7 @@ async function main(): Promise<void> {
 
   try {
     await client.connect();
-    console.log(`Connected as user ${client.userUuid}`);
+    console.log(`Connected as account ${client.account}`);
 
     await client.subscribe(['orders']);
 
