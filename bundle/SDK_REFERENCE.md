@@ -21,8 +21,8 @@ const ack = await client.placeOrder({
   symbol: 'BTC-USDC-PERP',
   side: 'SELL',
   orderType: 'LIMIT',
-  price: 999_999,
-  quantity: 0.01,
+  price: '999999', // decimal string — do not pass JS numbers from floats
+  quantity: '0.01',
   timeInForce: 'GTC',
 });
 
@@ -141,7 +141,9 @@ String unions used by the public API:
 - `PositionUpdateType`: `'SNAPSHOT'`, `'OPEN'`, `'INCREASE'`, `'DECREASE'`, `'CLOSE'`
 - `CancelReason`: `'USER_REQUESTED'`, `'IOC_REMAINDER'`, `'FOK_NOT_FILLED'`, `'EXPIRED'`, `'SYSTEM'`, `'ADL'`, `'LIQUIDATED_CANCELED'`, `'MARGIN_CANCELED'`, `'REDUCE_ONLY'`, `'STP_EXPIRE_TAKER'`, `'STP_CANCEL_RESTING'`
 
-`PlaceOrderOptions` accepts `reduceOnly`, `postOnly`, `stpMode`, `pegOffsetBps`, `triggerPrice`, `takeProfitPrice`, `stopLossPrice`, and `slippageBps`. Omit `slippageBps` to use the venue max walk cap (localnet 5%); typical explicit values are 50–500 bps (0.5%–5%). `PEG` pegs to the Pyth oracle mark.
+Prices and sizes on place / modify / mass-quote / batch-modify / TP-SL are **decimal strings** (e.g. `price: '67500.5'`, `quantity: '0.01'`). Pass the user-typed decimal; do not convert from JS floats.
+
+`PlaceOrderOptions` accepts `reduceOnly`, `postOnly`, `stpMode`, `pegOffsetBps`, `triggerPrice`, `takeProfitPrice`, `stopLossPrice` (price fields are decimal strings), and `slippageBps`. Omit `slippageBps` to use the venue max walk cap (localnet 5%); typical explicit values are 50–500 bps (0.5%–5%). `PEG` pegs to the Pyth oracle mark.
 
 ## Errors
 

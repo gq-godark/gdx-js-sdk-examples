@@ -218,7 +218,8 @@ async function runStrategy(): Promise<void> {
   console.log('Skipping leverage mutation in the reference flow.');
 
   const mark = Number(envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'));
-  const buyPx = Math.round(mark * 0.997 * 10) / 10;
+  // Decimal string API: format locally; do not pass floats into place/modify.
+  const buyPx = (Math.round(mark * 0.997 * 10) / 10).toFixed(1);
   console.log(`Placing limit BUY @ ${buyPx} (mark=${mark})...`);
   let buyAck: OrderAck | undefined;
   try {
@@ -227,7 +228,7 @@ async function runStrategy(): Promise<void> {
       side: 'BUY',
       orderType: 'LIMIT',
       price: buyPx,
-      quantity: 0.1,
+      quantity: '0.1',
       timeInForce: 'GTC',
     });
     console.log(`BUY placed: order_id=${buyAck.orderId}  sequence=${buyAck.sequence}`);
@@ -242,7 +243,7 @@ async function runStrategy(): Promise<void> {
   await new Promise((r) => setTimeout(r, 1000));
 
   if (buyAck) {
-    const modifyPx = Math.round(mark * 0.996 * 10) / 10;
+    const modifyPx = (Math.round(mark * 0.996 * 10) / 10).toFixed(1);
     console.log(`Modifying order price to ${modifyPx}...`);
     try {
       const modAck = await client.modifyOrder(buyAck.orderId, SYMBOL, {
@@ -263,7 +264,7 @@ async function runStrategy(): Promise<void> {
       symbol: SYMBOL,
       side: 'BUY',
       orderType: 'MARKET',
-      quantity: 0.01,
+      quantity: '0.01',
       timeInForce: 'IOC',
       slippageBps: 50,
     });
@@ -274,7 +275,7 @@ async function runStrategy(): Promise<void> {
 
   await new Promise((r) => setTimeout(r, 1000));
 
-  const sellPx = Math.round(mark * 1.03 * 10) / 10;
+  const sellPx = (Math.round(mark * 1.03 * 10) / 10).toFixed(1);
   console.log(`Placing limit SELL @ ${sellPx}...`);
   try {
     const sellAck = await client.placeOrder({
@@ -282,7 +283,7 @@ async function runStrategy(): Promise<void> {
       side: 'SELL',
       orderType: 'LIMIT',
       price: sellPx,
-      quantity: 0.05,
+      quantity: '0.05',
       postOnly: true,
     });
     console.log(`SELL placed: order_id=${sellAck.orderId}`);
@@ -310,12 +311,12 @@ async function runStrategy(): Promise<void> {
   // fills is reported per leg as fillCount).
   // Anchor ladder/cross prices to GODARK_E2E_PRICE / GDX_LIVE_PRICE (or GDX_BASE).
   const base = Number(process.env.GDX_BASE ?? String(mark)) || mark;
-  const round1 = (x: number) => Math.round(x * 10) / 10;
+  const round1 = (x: number) => (Math.round(x * 10) / 10).toFixed(1);
   console.log(`Mass-quoting a 3-level BUY ladder (post-only), base=${base.toFixed(2)}...`);
   const ladder: MassQuoteLegInput[] = [
-    { side: 'BUY', price: round1(base * (1 - 0.003)), quantity: 0.02 },
-    { side: 'BUY', price: round1(base * (1 - 0.006)), quantity: 0.02 },
-    { side: 'BUY', price: round1(base * (1 - 0.009)), quantity: 0.02 },
+    { side: 'BUY', price: round1(base * (1 - 0.003)), quantity: '0.02' },
+    { side: 'BUY', price: round1(base * (1 - 0.006)), quantity: '0.02' },
+    { side: 'BUY', price: round1(base * (1 - 0.009)), quantity: '0.02' },
   ];
   const restingIds: string[] = [];
   try {
@@ -355,7 +356,7 @@ async function runStrategy(): Promise<void> {
   try {
     const mq = await client.massQuote(
       SYMBOL,
-      [{ side: 'BUY', price: crossPx, quantity: 0.001 }],
+      [{ side: 'BUY', price: crossPx, quantity: '0.001' }],
       true,
     );
     for (const r of mq.results) {
@@ -374,7 +375,7 @@ async function runStrategy(): Promise<void> {
   try {
     const mq = await client.massQuote(
       SYMBOL,
-      [{ side: 'BUY', price: crossPx, quantity: 0.003 }],
+      [{ side: 'BUY', price: crossPx, quantity: '0.003' }],
       false,
     );
     for (const r of mq.results) {

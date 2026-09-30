@@ -94,8 +94,8 @@ const ack = await client.placeOrder({
   symbol: 'BTC-USDC-PERP',
   side: 'SELL',
   orderType: 'LIMIT',
-  price: 999_999,
-  quantity: 0.01,
+  price: '999999', // decimal string — do not pass JS numbers from floats
+  quantity: '0.01',
 });
 await client.cancelOrder(ack.orderId, 'BTC-USDC-PERP');
 await client.disconnect();

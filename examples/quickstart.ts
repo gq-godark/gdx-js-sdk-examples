@@ -97,7 +97,8 @@ async function main(): Promise<void> {
     const mark = Number(
       envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'),
     );
-    const sellPx = Math.round(mark * 1.03 * 10) / 10;
+    // Decimal string API: format locally; do not pass floats into placeOrder.
+    const sellPx = (Math.round(mark * 1.03 * 10) / 10).toFixed(1);
     const recover = () => recoverSession(client);
 
     const ack = await withOneRetry(
@@ -108,7 +109,7 @@ async function main(): Promise<void> {
           side: 'SELL',
           orderType: 'LIMIT',
           price: sellPx,
-          quantity: 0.01,
+          quantity: '0.01',
           postOnly: true,
           confirmation: 'ack',
         }),

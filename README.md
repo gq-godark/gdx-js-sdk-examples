@@ -105,6 +105,7 @@ npm run full-trader-rest
 | `full-trader-rest`    | `examples/full-trader-rest.ts`      | One-shot HPKE REST snapshots plus place / modify / cancel round trip |
 
 Order-type support in this MM distribution is limited to **`MARKET`** and **`LIMIT`**.
+Prices and sizes in the SDK API are **decimal strings** (e.g. `price: '67500.5'`, `quantity: '0.01'`) — pass the user-typed decimal; do not convert from JS floats.
 
 ## Packaging for market makers
 

@@ -53,10 +53,10 @@ async function main(): Promise<void> {
   console.log('account', account.summary?.totalCollateral);
 
   const mark = Number(process.env.GDX_LIVE_PRICE ?? '78000');
-  const price = mark - 5000;
+  const price = String(mark - 5000);
   const ack = await client.placeOrder('BTC-USDC-PERP', 'BUY', {
     type: 'LIMIT',
-    quantity: 0.01,
+    quantity: '0.01',
     price,
     clientOrderId: 'sdk-js-rest-demo',
   });
@@ -65,7 +65,7 @@ async function main(): Promise<void> {
   await new Promise((r) => setTimeout(r, 500));
 
   const modifyAck = await client.modifyOrder(ack.orderId, 'BTC-USDC-PERP', {
-    newPrice: price - 64,
+    newPrice: String(Number(price) - 64),
   });
   console.log('modified', modifyAck);
 
