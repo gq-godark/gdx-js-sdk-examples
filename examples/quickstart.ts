@@ -97,7 +97,7 @@ async function main(): Promise<void> {
     const mark = Number(
       envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'),
     );
-    // Decimal string API: format locally; do not pass floats into placeOrder.
+    // Decimal strings only: format locally; numbers/floats are rejected.
     const sellPx = (Math.round(mark * 1.03 * 10) / 10).toFixed(1);
     const recover = () => recoverSession(client);
 

@@ -24,7 +24,7 @@ const ack = await client.placeOrder({
   symbol: 'BTC-USDC-PERP',
   side: 'SELL',
   orderType: 'LIMIT',
-  price: '999999', // decimal string — do not pass JS numbers from floats
+  price: '999999', // decimal string only — numbers are rejected
   quantity: '0.01',
   timeInForce: 'GTC',
 });
@@ -221,7 +221,7 @@ String unions exposed by the public API:
 - `PositionUpdateType`: `'SNAPSHOT'`, `'OPEN'`, `'INCREASE'`, `'DECREASE'`, `'CLOSE'`
 - `CancelReason`: `'USER_REQUESTED'`, `'IOC_REMAINDER'`, `'FOK_NOT_FILLED'`, `'EXPIRED'`, `'SYSTEM'`, `'ADL'`, `'LIQUIDATED_CANCELED'`, `'MARGIN_CANCELED'`, `'REDUCE_ONLY'`, `'STP_EXPIRE_TAKER'`, `'STP_CANCEL_RESTING'`
 
-Prices and sizes on `placeOrder` / `modifyOrder` / `massQuote` / `batchModify` / TP-SL are **decimal strings** (e.g. `price: '67500.5'`, `quantity: '0.01'`). Pass the user-typed decimal; do not convert from JS floats. Non-decimal input is rejected.
+Prices, sizes, quote notional, min fill, trigger, take-profit, and stop-loss on `placeOrder` / `modifyOrder` / `massQuote` / `batchModify` / TP-SL are **decimal strings only** (e.g. `price: '67500.5'`, `quantity: '0.01'`). Numbers and floats are rejected; pass the user-typed decimal string.
 
 `PlaceOrderOptions` (on `placeOrder`) also accepts `reduceOnly`, `postOnly`, `stpMode`, `pegOffsetBps` (signed bps vs Pyth mark for `PEG`), `triggerPrice` (mark trigger for stops, decimal string), `takeProfitPrice`, `stopLossPrice` (decimal strings), and `slippageBps`. Omit `slippageBps` to use the venue max walk cap (localnet 5%); typical explicit values are 50–500 bps (0.5%–5%).
 

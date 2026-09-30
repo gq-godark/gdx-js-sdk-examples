@@ -218,7 +218,7 @@ async function runStrategy(): Promise<void> {
   console.log('Skipping leverage mutation in the reference flow.');
 
   const mark = Number(envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'));
-  // Decimal string API: format locally; do not pass floats into place/modify.
+  // Decimal strings only: format locally; numbers/floats are rejected.
   const buyPx = (Math.round(mark * 0.997 * 10) / 10).toFixed(1);
   console.log(`Placing limit BUY @ ${buyPx} (mark=${mark})...`);
   let buyAck: OrderAck | undefined;
