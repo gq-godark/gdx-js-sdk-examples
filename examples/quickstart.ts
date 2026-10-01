@@ -1,7 +1,9 @@
 /**
  * GoDark SDK — Quickstart
  *
- * Place a far limit sell, then cancel.
+ * WebSocket login (REST access token), subscribe to orders, place a far
+ * limit sell as decimal strings, then cancel. Read positions with
+ * `npm run full-trader-rest` (`getPositions`) or the `positions` channel.
  *
  *   npm run quickstart
  *

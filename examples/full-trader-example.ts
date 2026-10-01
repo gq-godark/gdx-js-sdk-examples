@@ -256,8 +256,8 @@ async function runStrategy(): Promise<void> {
     await new Promise((r) => setTimeout(r, 1000));
   }
 
-  // Market IOC with explicit walk cap: 50 bps = 0.5% of mark (UI default).
-  // Omit slippageBps → venue max (localnet 5%).
+  // slippageBps is valid only on MARKET and STOP_MARKET (50 bps = 0.5% of mark).
+  // Omit it to use the venue max walk (localnet 5%). PEG cannot be post-only.
   console.log('Placing market IOC BUY qty=0.01 with slippageBps=50 (0.5% walk)...');
   try {
     const mktAck = await client.placeOrder({

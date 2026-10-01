@@ -53,19 +53,19 @@ async function main(): Promise<void> {
   console.log('account', account.summary?.totalCollateral);
 
   const mark = Number(process.env.GDX_LIVE_PRICE ?? '78000');
-  const price = String(mark - 5000);
+  // Wire price is a decimal string. REST place does not register a client-order id.
+  const price = (mark - 5000).toFixed(1);
   const ack = await client.placeOrder('BTC-USDC-PERP', 'BUY', {
     type: 'LIMIT',
     quantity: '0.01',
     price,
-    clientOrderId: 'sdk-js-rest-demo',
   });
   console.log('placed', ack);
 
   await new Promise((r) => setTimeout(r, 500));
 
   const modifyAck = await client.modifyOrder(ack.orderId, 'BTC-USDC-PERP', {
-    newPrice: String(Number(price) - 64),
+    newPrice: (Number(price) - 64).toFixed(1),
   });
   console.log('modified', modifyAck);
 

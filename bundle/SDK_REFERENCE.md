@@ -1,6 +1,6 @@
 # GoDark JavaScript SDK Reference (MM Distribution)
 
-This reference describes the API surface used by the examples shipped in this distribution. The primary market-maker flow uses the persistent HPKE WebSocket client, `GodarkClient`, plus the public market-data feed via `MarketDataClient`. The SDK also provides `GodarkRestClient` for Bearer-authenticated, one-shot HPKE REST snapshots and supported trading operations.
+This reference describes the API surface used by the examples shipped in this distribution. The primary market-maker flow uses the persistent HPKE WebSocket client, `GodarkClient`. Public `/ws/v1` feeds are `volume`, `open_interest`, and `funding_rate`. The SDK also provides `GodarkRestClient` for Bearer-authenticated, one-shot HPKE REST snapshots and supported trading operations.
 
 Order placement support in this MM distribution is limited to `MARKET` and `LIMIT`.
 
@@ -51,7 +51,7 @@ Use `.env.example` as the template for your local `.env`. The OS environment alw
 | Method        | Signature                                                   | Purpose                                              |
 |---------------|-------------------------------------------------------------|------------------------------------------------------|
 | constructor   | `new GodarkClient(opts: GodarkClientOptions)`               | Construct the client                                 |
-| `connect`     | `connect(): Promise<void>`                                  | Authenticate + HPKE setup handshake + encrypted session           |
+| `connect`     | `connect(): Promise<void>`                                  | Mint a REST `client_credentials` access token, WebSocket-login with that token, then HPKE session |
 | `disconnect`  | `disconnect(): Promise<void>`                               | Graceful disconnect                                  |
 | `account`     | `readonly account: string \| undefined`                     | Authenticated Solana L2 account                      |
 
@@ -71,7 +71,7 @@ Use `.env.example` as the template for your local `.env`. The OS environment alw
 
 | Method                                       | Purpose                                  |
 |----------------------------------------------|------------------------------------------|
-| `subscribe(['orders', 'positions'])`         | Subscribe to private push streams        |
+| `subscribe(['orders', 'positions', 'funding_rate'])` | This edge: `orders`, `positions`, `volume`, `open_interest`, `funding_rate`. Trades and L2 are not on `/ws/v1`. |
 | `unsubscribe([...])`                         | Unsubscribe from one or more streams     |
 
 ### Push callbacks + async iterators
@@ -100,16 +100,14 @@ Trading commands may be in flight concurrently. The SDK serializes HPKE nonce as
 
 ## MarketDataClient API
 
-Public order-book and trades feed. No authentication required.
+Public `/ws/v1` channels are `volume`, `open_interest`, and `funding_rate`. Trades and the L2 order book are not on `/ws/v1`.
 
 ```typescript
 import { MarketDataClient } from '@godark/sdk';
 
-const md = new MarketDataClient('wss://api.godark-dex.com');
+const md = new MarketDataClient('wss://api.godark-dex.com/ws/v1');
 await md.connect();
-await md.subscribeOrderbook('BTC-USDC-PERP', (msg) => { /* ... */ });
-await md.subscribeTrades('BTC-USDC-PERP', (msg) => { /* ... */ });
-// ...
+await md.subscribePublicChannel('funding_rate', (msg) => { /* ... */ });
 await md.disconnect();
 ```
 
@@ -117,7 +115,7 @@ await md.disconnect();
 
 After `connect()`, `authenticatedAccount` exposes the canonical Solana account identity (`authenticatedUserUuid` is a deprecated compatibility alias).
 
-Authenticated snapshots and reads: `getOpenOrders`, `getPositions`, `getAccount`, `getOrder`, `getOrderByClientOrderId`, and `getLeverage`. Encrypted trading: `placeOrder`, `cancelOrder`, `cancelOrderByClientId`, `modifyOrder`, `updateLeverage`, `massQuote`, `batchCancel`, and `batchModify`. `awaitTerminalStatus` polls order state. Public `getFundingRates`, `getOpenInterest`, and `getVolume` reads require no connection. Use `GodarkClient` when persistent private push streams are required.
+`connect()` uses REST `grant_type=client_credentials`. Authenticated snapshots and reads: `getOpenOrders`, `getPositions`, `getAccount`, `getOrder`, `getOrderByClientOrderId`, and `getLeverage`. Encrypted trading: `placeOrder`, `cancelOrder`, `cancelOrderByClientId`, `modifyOrder`, `updateLeverage`, `massQuote`, `batchCancel`, and `batchModify`. `awaitTerminalStatus` polls order state. Public `getFundingRates`, `getOpenInterest`, and `getVolume` reads require no connection. REST place does not register a client-order id; registration is `POST /orders/_register_coid` only after a successful WebSocket place. A 400 from that call is a failure. Use `GodarkClient` when persistent private push streams are required.
 
 ## Core Types
 
@@ -143,7 +141,7 @@ String unions used by the public API:
 
 Prices, sizes, quote notional, min fill, trigger, take-profit, and stop-loss on place / modify / mass-quote / batch-modify / TP-SL are **decimal strings only** (e.g. `price: '67500.5'`, `quantity: '0.01'`). Numbers and floats are rejected; pass the user-typed decimal string.
 
-`PlaceOrderOptions` accepts `reduceOnly`, `postOnly`, `stpMode`, `pegOffsetBps`, `triggerPrice`, `takeProfitPrice`, `stopLossPrice` (price fields are decimal strings), and `slippageBps`. Omit `slippageBps` to use the venue max walk cap (localnet 5%); typical explicit values are 50–500 bps (0.5%–5%). `PEG` pegs to the Pyth oracle mark.
+`PlaceOrderOptions` accepts `reduceOnly`, `postOnly`, `stpMode`, `pegOffsetBps`, `triggerPrice`, `takeProfitPrice`, `stopLossPrice` (price fields are decimal strings), and `slippageBps`. `slippageBps` applies only to `MARKET` and `STOP_MARKET`. Omit it to use the venue max walk cap (localnet 5%); typical explicit values are 50–500 bps (0.5%–5%). `PEG` pegs to the Pyth oracle mark and is incompatible with post-only.
 
 ## Errors
 
@@ -160,8 +158,8 @@ Prices, sizes, quote notional, min fill, trigger, take-profit, and stop-loss on 
 
 | File                                  | What it does                                                                                          |
 |---------------------------------------|-------------------------------------------------------------------------------------------------------|
-| `examples/quickstart.ts`              | Minimal flow: connect → place limit sell → cancel → disconnect                                        |
-| `examples/full-trader-example.ts`     | Reference bot loop: private streams, market data, place / modify / cancel, mass-quote / batch-cancel |
+| `examples/quickstart.ts`              | Token login → subscribe `orders` → decimal-string limit sell → cancel                                 |
+| `examples/full-trader-example.ts`     | `orders` / `positions` / `funding_rate`, place / modify / cancel, market slippage, mass-quote / batch-cancel |
 | `examples/rest-client-example.ts`     | REST public reads, auth, encrypted account/open-orders snapshots, and leverage                      |
 | `examples/full-trader-rest.ts`        | REST encrypted snapshots plus place / modify / cancel round trip                                    |
 | `examples/dotenv.ts`                  | Shared `.env` loader + `OrderError` pretty-printer used by both example mains                         |

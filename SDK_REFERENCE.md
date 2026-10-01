@@ -4,7 +4,7 @@ This is the comprehensive reference for maintainers and developers working *insi
 
 A trimmed, recipient-facing copy is maintained at [`bundle/SDK_REFERENCE.md`](bundle/SDK_REFERENCE.md) and is the one copied into the root of released ZIP bundles as `SDK_REFERENCE.md`. The bundle version intentionally omits sections that recipients don't need (refresh / parity / pin discipline, error-code internals, forward-compat strategy, SDK sourcing options).
 
-> Scope: the primary MM flow uses persistent HPKE WebSocket trading via `GodarkClient`, plus the public market-data feed via `MarketDataClient`. The SDK also provides `GodarkRestClient` for Bearer-authenticated, one-shot HPKE REST snapshots and supported trading operations. Order placement support in these examples is limited to `MARKET` and `LIMIT`.
+> Scope: the primary MM flow uses persistent HPKE WebSocket trading via `GodarkClient`. Public `/ws/v1` feeds are `volume`, `open_interest`, and `funding_rate` via `MarketDataClient`. The SDK also provides `GodarkRestClient` for Bearer-authenticated, one-shot HPKE REST snapshots and supported trading operations. Order placement support in these examples is limited to `MARKET` and `LIMIT`.
 
 ## Quick Start
 
@@ -83,7 +83,7 @@ To consume `@godark/sdk` from your own project outside this repo:
 | Method       | Signature                                                       | Purpose                                       |
 |--------------|-----------------------------------------------------------------|-----------------------------------------------|
 | constructor  | `new GodarkClient(opts: GodarkClientOptions)`                   | Construct the client                          |
-| `connect`    | `connect(): Promise<void>`                                      | Authenticate + HPKE setup handshake + encrypted session |
+| `connect`    | `connect(): Promise<void>`                                      | Mint a REST `client_credentials` access token, then WebSocket login with that token (not `key:secret:passphrase`) + HPKE session |
 | `disconnect` | `disconnect(): Promise<void>`                                   | Graceful disconnect                           |
 | `account`    | `readonly account: string \| undefined`                         | Authenticated Solana L2 account               |
 
@@ -109,7 +109,7 @@ To consume `@godark/sdk` from your own project outside this repo:
 
 | Method                                       | Purpose                                  |
 |----------------------------------------------|------------------------------------------|
-| `subscribe(['orders', 'positions'])`         | Subscribe to private push streams        |
+| `subscribe(['orders', 'positions', 'funding_rate'])` | This edge: `orders`, `positions`, `volume`, `open_interest`, `funding_rate`. Trades and L2 order book are not on `/ws/v1`. |
 | `unsubscribe([...])`                         | Unsubscribe from one or more streams     |
 
 ### Push streams — callbacks + iterators
@@ -147,19 +147,14 @@ Trading commands may be in flight concurrently. The SDK serializes HPKE nonce as
 
 ## MarketDataClient
 
-Public market data is served on the same edge endpoint as the trading WebSocket but uses no auth and no encryption.
+Public feeds on this edge's `/ws/v1` are `volume`, `open_interest`, and `funding_rate` (`subscribePublicChannel`). No authentication. Trades and the L2 order book are not served on `/ws/v1`; `subscribeOrderbook` throws on that path.
 
 ```typescript
 import { MarketDataClient } from '@godark/sdk';
 
-const md = new MarketDataClient('wss://api.godark-dex.com', {
-  headers: { 'X-Trader-Tag': 'js-md-demo' },
-});
-
+const md = new MarketDataClient('wss://api.godark-dex.com/ws/v1');
 await md.connect();
-await md.subscribeOrderbook('BTC-USDC-PERP', (msg) => { /* ... */ });
-await md.subscribeTrades('BTC-USDC-PERP', (msg) => { /* ... */ });
-// ...
+await md.subscribePublicChannel('funding_rate', (msg) => { /* ... */ });
 await md.disconnect();
 ```
 
@@ -171,7 +166,7 @@ The same `TransportOptions` shape used by `GodarkClient` is accepted by the `Mar
 
 `GodarkRestClient` is exported from the npm tarball and demonstrated by the bundled REST examples. After `connect()`, `authenticatedAccount` exposes the canonical Solana account identity (`authenticatedUserUuid` is a deprecated compatibility alias).
 
-Supported authenticated snapshots and reads are `getOpenOrders`, `getPositions`, `getAccount`, `getOrder`, `getOrderByClientOrderId`, and `getLeverage`. Supported encrypted trading methods are `placeOrder`, `cancelOrder`, `cancelOrderByClientId`, `modifyOrder`, `updateLeverage`, `massQuote`, `batchCancel`, and `batchModify`; `awaitTerminalStatus` polls order state. Public reads `getFundingRates`, `getOpenInterest`, and `getVolume` do not require `connect()`. The primary market-maker flow still uses `GodarkClient` because its persistent WebSocket session also carries private push streams.
+`connect()` uses REST `grant_type=client_credentials`. Supported authenticated snapshots and reads are `getOpenOrders`, `getPositions`, `getAccount`, `getOrder`, `getOrderByClientOrderId`, and `getLeverage`. Supported encrypted trading methods are `placeOrder`, `cancelOrder`, `cancelOrderByClientId`, `modifyOrder`, `updateLeverage`, `massQuote`, `batchCancel`, and `batchModify`; `awaitTerminalStatus` polls order state. Public reads `getFundingRates`, `getOpenInterest`, and `getVolume` do not require `connect()`. REST `placeOrder` does not call `POST /orders/_register_coid`. A client-order id is registered only after a successful WebSocket place; a 400 from register is a failure, not a locally stored mapping. The primary market-maker flow still uses `GodarkClient` because its persistent WebSocket session also carries private push streams.
 
 ## Core Types
 
@@ -223,9 +218,9 @@ String unions exposed by the public API:
 
 Prices, sizes, quote notional, min fill, trigger, take-profit, and stop-loss on `placeOrder` / `modifyOrder` / `massQuote` / `batchModify` / TP-SL are **decimal strings only** (e.g. `price: '67500.5'`, `quantity: '0.01'`). Numbers and floats are rejected; pass the user-typed decimal string.
 
-`PlaceOrderOptions` (on `placeOrder`) also accepts `reduceOnly`, `postOnly`, `stpMode`, `pegOffsetBps` (signed bps vs Pyth mark for `PEG`), `triggerPrice` (mark trigger for stops, decimal string), `takeProfitPrice`, `stopLossPrice` (decimal strings), and `slippageBps`. Omit `slippageBps` to use the venue max walk cap (localnet 5%); typical explicit values are 50–500 bps (0.5%–5%).
+`PlaceOrderOptions` (on `placeOrder`) also accepts `reduceOnly`, `postOnly`, `stpMode`, `pegOffsetBps` (signed bps vs Pyth mark for `PEG`), `triggerPrice` (mark trigger for stops, decimal string), `takeProfitPrice`, `stopLossPrice` (decimal strings), and `slippageBps`. `slippageBps` applies only to `MARKET` and `STOP_MARKET`. Omit it to use the venue max walk cap (localnet 5%); typical explicit values are 50–500 bps (0.5%–5%).
 
-`PEG` pegs to the Pyth oracle mark (not book mid/bid/ask). Use `pegOffsetBps` or an absolute `price` offset (decimal string).
+`PEG` pegs to the Pyth oracle mark (not book mid/bid/ask). Use `pegOffsetBps` or an absolute `price` offset (decimal string). Peg is incompatible with post-only. `clientOrderId` is registered only after a successful WebSocket place.
 
 Note: the SDK additionally exposes parallel `*_FROM_PROTO` / `*_TO_PROTO` lookup tables (e.g. `RESPONSE_MESSAGE_TYPE_TO_PROTO`) for advanced users who want to construct or parse encrypted-edge frames directly. These are stable, but ordinary callers should not need them.
 
@@ -277,8 +272,8 @@ The `OrderError.errorCode` field already carries the symbolic string for thrown 
 
 | File                                     | Purpose                                                                                           |
 |------------------------------------------|---------------------------------------------------------------------------------------------------|
-| `examples/quickstart.ts`                 | Minimal connect, place, cancel                                                                    |
-| `examples/full-trader-example.ts`        | Reference bot flow: private streams, market data, place / modify / cancel, mass-quote / batch-cancel |
+| `examples/quickstart.ts`                 | Token login, subscribe `orders`, decimal-string place, cancel                                     |
+| `examples/full-trader-example.ts`        | `orders` / `positions` / `funding_rate`, place / modify / cancel, market slippage, mass-quote / batch-cancel |
 | `examples/rest-client-example.ts`        | REST public reads, auth, encrypted account/open-orders snapshots, and leverage                    |
 | `examples/full-trader-rest.ts`           | REST encrypted snapshots plus place / modify / cancel round trip                                  |
 | `examples/dotenv.ts`                     | Shared helper (`loadDotenv` + `printOrderError`)                                                  |

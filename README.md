@@ -60,6 +60,21 @@ Fund the default user: `gdx fund 00000000-0000-4000-8000-000000000001`. Copy `VI
 
 The OS environment always wins over `.env`.
 
+## Participant path
+
+Follow the examples in this order against the hosted edge (`wss://api.godark-dex.com` / `https://api.godark-dex.com`):
+
+1. **Install** — `npm install` (vendored `@godark/sdk` plus public devDependencies).
+2. **Environment names** — copy `.env.example` to `.env` and set `GODARK_API_KEY_ID`, `GODARK_API_SECRET`, and `GODARK_PASSPHRASE`. Optional: `GODARK_EDGE_URL`, `GODARK_REST_URL`, `GDX_HPKE_STATIC_PUBLIC_KEY`.
+3. **REST auth** — `npm run rest-client` mints a `client_credentials` access token and reads public funding, open interest, and volume, then account snapshots.
+4. **WebSocket login** — `npm run quickstart` uses that same REST access token on the socket. The login frame is the token, not `key:secret:passphrase`.
+5. **Subscribe** — channels on this edge are `orders`, `positions`, `volume`, `open_interest`, and `funding_rate`. Trades and the L2 order book are not on `/ws/v1`.
+6. **Place** — prices, sizes, quote notional, min fill, trigger, take-profit, and stop-loss are decimal strings (`"0.001"`, `"67500.5"`). Numbers are rejected. `slippageBps` is only for `MARKET` and `STOP_MARKET`. `PEG` cannot be combined with post-only.
+7. **Read a position** — `npm run full-trader-rest` calls `getPositions`, or subscribe to `positions` in `npm run full-trader`.
+8. **Cancel** — quickstart calls `cancelAllOrders`; the REST trader cancels the order id returned by place.
+
+A client-order id is registered only after a successful WebSocket place (`POST /orders/_register_coid`). REST place does not register one. A 400 from that endpoint is a failure.
+
 ## Install
 
 ### From a released ZIP (recommended for MMs)
@@ -99,8 +114,8 @@ npm run full-trader-rest
 
 | Sample                | Source                              | Purpose                                                                                                                              |
 |-----------------------|-------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------|
-| `quickstart`          | `examples/quickstart.ts`            | Minimal connect → `subscribe(['orders'])` → LIMIT sell far from touch → cancel (book confirmation needs the private orders channel) |
-| `full-trader-example` | `examples/full-trader-example.ts`   | Reference bot flow: private streams, market data, place / modify / cancel, mass-quote / batch-cancel, queue drain |
+| `quickstart`          | `examples/quickstart.ts`            | REST-token WebSocket login → `subscribe(['orders'])` → LIMIT sell with decimal-string price → cancel |
+| `full-trader-example` | `examples/full-trader-example.ts`   | Private streams (`orders`, `positions`, `funding_rate`), place / modify / cancel, market `slippageBps`, mass-quote / batch-cancel |
 | `rest-client-example` | `examples/rest-client-example.ts`   | Public REST reads, auth, encrypted account/open-orders snapshots, and leverage |
 | `full-trader-rest`    | `examples/full-trader-rest.ts`      | One-shot HPKE REST snapshots plus place / modify / cancel round trip |
 
