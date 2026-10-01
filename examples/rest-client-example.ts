@@ -8,6 +8,7 @@
  * Environment:
  *   GODARK_API_KEY_ID, GODARK_API_SECRET, GODARK_PASSPHRASE
  *   GODARK_REST_URL (optional; default https://api.godark-dex.com)
+ *   GODARK_ACCOUNT / GDX_ACCOUNT (optional account fallback for local auth)
  */
 import { GodarkRestClient } from '@godark/sdk';
 
@@ -25,11 +26,14 @@ async function main(): Promise<void> {
   }
 
   const restBaseUrl = process.env.GODARK_REST_URL?.trim();
+  const account =
+    process.env.GODARK_ACCOUNT?.trim() || process.env.GDX_ACCOUNT?.trim();
   const client = new GodarkRestClient({
     apiKeyId,
     apiSecret,
     passphrase,
     ...(restBaseUrl ? { restBaseUrl } : {}),
+    ...(account ? { account } : {}),
   });
 
   try {
@@ -45,7 +49,7 @@ async function main(): Promise<void> {
     console.log('connecting (REST auth/token)...');
     await client.connect();
     console.log('identity', {
-      userUuid: client.authenticatedUserUuid,
+      account: client.authenticatedAccount,
       tokenScope: client.tokenScope,
     });
 
@@ -58,7 +62,7 @@ async function main(): Promise<void> {
 
     try {
       const account = await client.getAccount();
-      console.log('account', account.account?.totalCollateral);
+      console.log('account', account.summary?.totalCollateral);
     } catch (err) {
       console.log(`getAccount skipped: ${err instanceof Error ? err.message : err}`);
     }

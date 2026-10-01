@@ -116,9 +116,6 @@ function makeClient(): GodarkClient {
       'GODARK_HPKE_STATIC_PUBLIC_KEY',
       'GDX_HPKE_STATIC_PUBLIC_KEY',
       'GDX_HPKE_STATIC_PUBKEY',
-      'GODARK_HPKE_STATIC_PUBLIC_KEY',
-      'GDX_HPKE_STATIC_PUBLIC_KEY',
-      'GDX_HPKE_STATIC_PUBKEY',
     ],
     '',
   );
@@ -135,8 +132,8 @@ function makeClient(): GodarkClient {
     return new GodarkClient({
       ...common,
       apiKey: legacyKey,
-      ...(envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '')
-        ? { userUuid: envFirst(['GODARK_USER_UUID', 'GDX_USER_UUID'], '') }
+      ...(envFirst(['GODARK_ACCOUNT', 'GDX_ACCOUNT'], '')
+        ? { account: envFirst(['GODARK_ACCOUNT', 'GDX_ACCOUNT'], '') }
         : {}),
     });
   }
@@ -210,54 +207,75 @@ async function runStrategy(): Promise<void> {
   }
 
   console.log(
-    `Authenticated as user_uuid=${client.userUuid}  (HPKE session, buffer=${STREAM_BUFFER})`,
+    `Authenticated as account=${client.account}  (HPKE session, buffer=${STREAM_BUFFER})`,
   );
 
   await client.subscribe(['orders', 'positions', 'funding_rate']);
   console.log('Subscribed to order + position + funding updates');
 
-  // Leverage updates are available via GodarkRestClient.updateLeverage (REST one-shot HPKE).
-  console.log('Skipping leverage update in WS example (use full-trader-rest for REST leverage).');
+  // `client.updateLeverage(SYMBOL, leverage)` is available over this encrypted
+  // WebSocket. This reference flow avoids changing account configuration.
+  console.log('Skipping leverage mutation in the reference flow.');
 
   const mark = Number(envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'));
-  const buyPx = Math.round(mark * 0.997 * 10) / 10;
+  // Decimal strings only: format locally; numbers/floats are rejected.
+  const buyPx = (Math.round(mark * 0.997 * 10) / 10).toFixed(1);
   console.log(`Placing limit BUY @ ${buyPx} (mark=${mark})...`);
-  let buyAck: OrderAck;
+  let buyAck: OrderAck | undefined;
   try {
     buyAck = await client.placeOrder({
       symbol: SYMBOL,
       side: 'BUY',
       orderType: 'LIMIT',
       price: buyPx,
-      quantity: 0.1,
+      quantity: '0.1',
       timeInForce: 'GTC',
     });
     console.log(`BUY placed: order_id=${buyAck.orderId}  sequence=${buyAck.sequence}`);
   } catch (e: unknown) {
     if (e instanceof GodarkError) {
-      printOrderError('BUY', e);
-      await client.disconnect();
-      return;
+      printOrderError('BUY rejected (continuing to market Place)', e);
+    } else {
+      throw e;
     }
-    throw e;
   }
 
   await new Promise((r) => setTimeout(r, 1000));
 
-  const modifyPx = Math.round(mark * 0.996 * 10) / 10;
-  console.log(`Modifying order price to ${modifyPx}...`);
+  if (buyAck) {
+    const modifyPx = (Math.round(mark * 0.996 * 10) / 10).toFixed(1);
+    console.log(`Modifying order price to ${modifyPx}...`);
+    try {
+      const modAck = await client.modifyOrder(buyAck.orderId, SYMBOL, {
+        newPrice: modifyPx,
+      });
+      console.log(`Modified: order_id=${modAck.orderId}`);
+    } catch (e: unknown) {
+      printOrderError('MODIFY (may have filled before modify took)', e);
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
+  // slippageBps is valid only on MARKET and STOP_MARKET (50 bps = 0.5% of mark).
+  // Omit it to use the venue max walk (localnet 5%). PEG cannot be post-only.
+  console.log('Placing market IOC BUY qty=0.01 with slippageBps=50 (0.5% walk)...');
   try {
-    const modAck = await client.modifyOrder(buyAck.orderId, SYMBOL, {
-      newPrice: modifyPx,
+    const mktAck = await client.placeOrder({
+      symbol: SYMBOL,
+      side: 'BUY',
+      orderType: 'MARKET',
+      quantity: '0.01',
+      timeInForce: 'IOC',
+      slippageBps: 50,
     });
-    console.log(`Modified: order_id=${modAck.orderId}`);
+    console.log(`MARKET BUY placed: order_id=${mktAck.orderId}`);
   } catch (e: unknown) {
-    printOrderError('MODIFY (may have filled before modify took)', e);
+    printOrderError('Market BUY rejected (continuing)', e);
   }
 
   await new Promise((r) => setTimeout(r, 1000));
 
-  const sellPx = Math.round(mark * 1.03 * 10) / 10;
+  const sellPx = (Math.round(mark * 1.03 * 10) / 10).toFixed(1);
   console.log(`Placing limit SELL @ ${sellPx}...`);
   try {
     const sellAck = await client.placeOrder({
@@ -265,7 +283,7 @@ async function runStrategy(): Promise<void> {
       side: 'SELL',
       orderType: 'LIMIT',
       price: sellPx,
-      quantity: 0.05,
+      quantity: '0.05',
       postOnly: true,
     });
     console.log(`SELL placed: order_id=${sellAck.orderId}`);
@@ -293,12 +311,12 @@ async function runStrategy(): Promise<void> {
   // fills is reported per leg as fillCount).
   // Anchor ladder/cross prices to GODARK_E2E_PRICE / GDX_LIVE_PRICE (or GDX_BASE).
   const base = Number(process.env.GDX_BASE ?? String(mark)) || mark;
-  const round1 = (x: number) => Math.round(x * 10) / 10;
+  const round1 = (x: number) => (Math.round(x * 10) / 10).toFixed(1);
   console.log(`Mass-quoting a 3-level BUY ladder (post-only), base=${base.toFixed(2)}...`);
   const ladder: MassQuoteLegInput[] = [
-    { side: 'BUY', price: round1(base * (1 - 0.003)), quantity: 0.02 },
-    { side: 'BUY', price: round1(base * (1 - 0.006)), quantity: 0.02 },
-    { side: 'BUY', price: round1(base * (1 - 0.009)), quantity: 0.02 },
+    { side: 'BUY', price: round1(base * (1 - 0.003)), quantity: '0.02' },
+    { side: 'BUY', price: round1(base * (1 - 0.006)), quantity: '0.02' },
+    { side: 'BUY', price: round1(base * (1 - 0.009)), quantity: '0.02' },
   ];
   const restingIds: string[] = [];
   try {
@@ -338,7 +356,7 @@ async function runStrategy(): Promise<void> {
   try {
     const mq = await client.massQuote(
       SYMBOL,
-      [{ side: 'BUY', price: crossPx, quantity: 0.001 }],
+      [{ side: 'BUY', price: crossPx, quantity: '0.001' }],
       true,
     );
     for (const r of mq.results) {
@@ -357,7 +375,7 @@ async function runStrategy(): Promise<void> {
   try {
     const mq = await client.massQuote(
       SYMBOL,
-      [{ side: 'BUY', price: crossPx, quantity: 0.003 }],
+      [{ side: 'BUY', price: crossPx, quantity: '0.003' }],
       false,
     );
     for (const r of mq.results) {
@@ -384,12 +402,14 @@ async function runStrategy(): Promise<void> {
     await new Promise((r) => setTimeout(r, 500));
   }
 
-  console.log('Cancelling original BUY (cleanup)...');
-  try {
-    await client.cancelOrder(buyAck.orderId, SYMBOL);
-    console.log('Original BUY cancelled');
-  } catch {
-    console.log('Original BUY already filled or cancelled');
+  if (buyAck) {
+    console.log('Cancelling original BUY (cleanup)...');
+    try {
+      await client.cancelOrder(buyAck.orderId, SYMBOL);
+      console.log('Original BUY cancelled');
+    } catch {
+      console.log('Original BUY already filled or cancelled');
+    }
   }
 
   console.log('='.repeat(60));

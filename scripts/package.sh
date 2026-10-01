@@ -10,6 +10,8 @@
 #   ├── examples/
 #   │   ├── quickstart.ts
 #   │   ├── full-trader-example.ts
+#   │   ├── full-trader-rest.ts
+#   │   ├── rest-client-example.ts
 #   │   └── dotenv.ts                     (shared .env loader + error printer)
 #   └── sdk/
 #       └── godark-sdk-<version>.tgz      (prebuilt @godark/sdk npm tarball)
@@ -45,6 +47,7 @@ for required in \
     .env.example \
     examples/quickstart.ts \
     examples/full-trader-example.ts \
+    examples/full-trader-rest.ts \
     examples/rest-client-example.ts \
     examples/dotenv.ts; do
   if [[ ! -f "${REPO_ROOT}/${required}" ]]; then
@@ -172,6 +175,7 @@ cp "${REPO_ROOT}/tsconfig.json"            "$DEST/tsconfig.json"
 # Examples - the actual demos the recipient is going to run.
 cp "${REPO_ROOT}/examples/quickstart.ts"          "$DEST/examples/"
 cp "${REPO_ROOT}/examples/full-trader-example.ts" "$DEST/examples/"
+cp "${REPO_ROOT}/examples/full-trader-rest.ts"    "$DEST/examples/"
 cp "${REPO_ROOT}/examples/rest-client-example.ts" "$DEST/examples/"
 cp "${REPO_ROOT}/examples/dotenv.ts"              "$DEST/examples/"
 
@@ -214,6 +218,8 @@ for required in \
   "${DIST_NAME}/tsconfig\\.json" \
   "${DIST_NAME}/examples/quickstart\\.ts" \
   "${DIST_NAME}/examples/full-trader-example\\.ts" \
+  "${DIST_NAME}/examples/full-trader-rest\\.ts" \
+  "${DIST_NAME}/examples/rest-client-example\\.ts" \
   "${DIST_NAME}/examples/dotenv\\.ts" \
   "${DIST_NAME}/sdk/${TARBALL_NAME//./\\.}"; do
   if ! echo "$LISTING" | grep -E "${required}" >/dev/null; then
