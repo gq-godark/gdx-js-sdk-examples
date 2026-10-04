@@ -10,6 +10,8 @@
 #   ├── examples/
 #   │   ├── quickstart.ts
 #   │   ├── full-trader-example.ts
+#   │   ├── full-trader-rest.ts
+#   │   ├── rest-client-example.ts
 #   │   └── dotenv.ts                     (shared .env loader + error printer)
 #   └── sdk/
 #       └── godark-sdk-<version>.tgz      (prebuilt @godark/sdk npm tarball)
@@ -45,6 +47,7 @@ for required in \
     .env.example \
     examples/quickstart.ts \
     examples/full-trader-example.ts \
+    examples/full-trader-rest.ts \
     examples/rest-client-example.ts \
     examples/dotenv.ts; do
   if [[ ! -f "${REPO_ROOT}/${required}" ]]; then
@@ -158,7 +161,8 @@ cp "${REPO_ROOT}/bundle/README.md"         "$DEST/README.md"
 cp "${REPO_ROOT}/bundle/SDK_REFERENCE.md"  "$DEST/SDK_REFERENCE.md"
 cp "${REPO_ROOT}/.env.example"             "$DEST/.env.example"
 
-# Build the recipient-facing package.json from bundle/.
+# Build manifests + lockfile so `npm install` from inside the bundle is
+# fully reproducible. Recipient-facing package.json lives under bundle/.
 python3 - "$REPO_ROOT/bundle/package.json" "$TARBALL_NAME" > "$DEST/package.json" <<'PY'
 import json, sys
 src, tarball = sys.argv[1], sys.argv[2]
@@ -167,11 +171,14 @@ pkg["dependencies"]["@godark/sdk"] = f"file:./sdk/{tarball}"
 json.dump(pkg, sys.stdout, indent=2)
 sys.stdout.write("\n")
 PY
+cp "${REPO_ROOT}/package-lock.json"        "$DEST/package-lock.json"
+sed -i 's/"gdx-js-sdk-examples"/"godark-examples"/g' "$DEST/package-lock.json"
 cp "${REPO_ROOT}/tsconfig.json"            "$DEST/tsconfig.json"
 
 # Examples - the actual demos the recipient is going to run.
 cp "${REPO_ROOT}/examples/quickstart.ts"          "$DEST/examples/"
 cp "${REPO_ROOT}/examples/full-trader-example.ts" "$DEST/examples/"
+cp "${REPO_ROOT}/examples/full-trader-rest.ts"    "$DEST/examples/"
 cp "${REPO_ROOT}/examples/rest-client-example.ts" "$DEST/examples/"
 cp "${REPO_ROOT}/examples/dotenv.ts"              "$DEST/examples/"
 
@@ -182,10 +189,6 @@ tar -xzf "$SHIP_TARBALL" -C "$SANITIZE_DIR"
 cp "${REPO_ROOT}/bundle/sdk/README.md" "$SANITIZE_DIR/package/README.md"
 tar -czf "$DEST/sdk/$TARBALL_NAME" -C "$SANITIZE_DIR" package
 rm -rf "$PARITY_DIR" "$SANITIZE_DIR"
-
-# The shipped tarball is created above, so generate the shipped lockfile now.
-# npm verifies file: dependencies against the exact bytes in sdk/.
-( cd "$DEST" && npm install --package-lock-only --no-audit --no-fund --ignore-scripts )
 
 # ---- zip ----------------------------------------------------------------
 ARCHIVE="$REPO_ROOT/${DIST_NAME}.zip"
@@ -214,6 +217,8 @@ for required in \
   "${DIST_NAME}/tsconfig\\.json" \
   "${DIST_NAME}/examples/quickstart\\.ts" \
   "${DIST_NAME}/examples/full-trader-example\\.ts" \
+  "${DIST_NAME}/examples/full-trader-rest\\.ts" \
+  "${DIST_NAME}/examples/rest-client-example\\.ts" \
   "${DIST_NAME}/examples/dotenv\\.ts" \
   "${DIST_NAME}/sdk/${TARBALL_NAME//./\\.}"; do
   if ! echo "$LISTING" | grep -E "${required}" >/dev/null; then

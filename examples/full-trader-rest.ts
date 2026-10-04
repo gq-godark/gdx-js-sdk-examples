@@ -41,7 +41,7 @@ async function main(): Promise<void> {
 
   await client.connect();
   console.log('identity', {
-    userUuid: client.authenticatedUserUuid,
+    account: client.authenticatedAccount,
     tokenScope: client.tokenScope,
   });
 
@@ -50,22 +50,22 @@ async function main(): Promise<void> {
   const positions = await client.getPositions();
   console.log('positions', positions.rows.length);
   const account = await client.getAccount();
-  console.log('account', account.account?.totalCollateral);
+  console.log('account', account.summary?.totalCollateral);
 
   const mark = Number(process.env.GDX_LIVE_PRICE ?? '78000');
-  const price = mark - 5000;
+  // Wire price is a decimal string. REST place does not register a client-order id.
+  const price = (mark - 5000).toFixed(1);
   const ack = await client.placeOrder('BTC-USDC-PERP', 'BUY', {
     type: 'LIMIT',
-    quantity: 0.01,
+    quantity: '0.01',
     price,
-    clientOrderId: 'sdk-js-rest-demo',
   });
   console.log('placed', ack);
 
   await new Promise((r) => setTimeout(r, 500));
 
   const modifyAck = await client.modifyOrder(ack.orderId, 'BTC-USDC-PERP', {
-    newPrice: price - 64,
+    newPrice: (Number(price) - 64).toFixed(1),
   });
   console.log('modified', modifyAck);
 

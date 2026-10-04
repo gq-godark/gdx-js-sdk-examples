@@ -1,6 +1,6 @@
 # GoDark JavaScript SDK Reference (MM Distribution)
 
-This reference describes the API surface used by the two example scripts shipped in this distribution. They exercise the WebSocket encrypted-trading path via `GodarkClient` (HPKE WebSocket) plus the public market-data feed via `MarketDataClient`. Encrypted REST trading is not supported — all order flow (place / modify / cancel / mass-quote) runs over the WebSocket client.
+This reference describes the API surface used by the examples shipped in this distribution. The primary market-maker flow uses the persistent HPKE WebSocket client, `GodarkClient`. Public `/ws/v1` feeds are `volume`, `open_interest`, and `funding_rate`. The SDK also provides `GodarkRestClient` for Bearer-authenticated, one-shot HPKE REST snapshots and supported trading operations.
 
 Order placement support in this MM distribution is limited to `MARKET` and `LIMIT`.
 
@@ -21,8 +21,8 @@ const ack = await client.placeOrder({
   symbol: 'BTC-USDC-PERP',
   side: 'SELL',
   orderType: 'LIMIT',
-  price: 999_999,
-  quantity: 0.01,
+  price: '999999', // decimal string only — numbers are rejected
+  quantity: '0.01',
   timeInForce: 'GTC',
 });
 
@@ -51,9 +51,9 @@ Use `.env.example` as the template for your local `.env`. The OS environment alw
 | Method        | Signature                                                   | Purpose                                              |
 |---------------|-------------------------------------------------------------|------------------------------------------------------|
 | constructor   | `new GodarkClient(opts: GodarkClientOptions)`               | Construct the client                                 |
-| `connect`     | `connect(): Promise<void>`                                  | Authenticate + HPKE setup handshake + encrypted session           |
+| `connect`     | `connect(): Promise<void>`                                  | Mint a REST `client_credentials` access token, WebSocket-login with that token, then HPKE session |
 | `disconnect`  | `disconnect(): Promise<void>`                               | Graceful disconnect                                  |
-| `userUuid`    | `readonly userUuid: string \| undefined`                    | Authenticated user id (populated after `connect`)    |
+| `account`     | `readonly account: string \| undefined`                     | Authenticated Solana L2 account                      |
 
 ### Trading commands
 
@@ -62,12 +62,16 @@ Use `.env.example` as the template for your local `.env`. The OS environment alw
 | `placeOrder`   | `placeOrder(opts: PlaceOrderOptions) -> Promise<OrderAck>`                                                            | Encrypted order placement                    |
 | `cancelOrder`  | `cancelOrder(orderId: string, symbol: string) -> Promise<OrderAck>`                                                   | Cancel an open order                         |
 | `modifyOrder`  | `modifyOrder(orderId: string, symbol: string, opts: ModifyOrderOptions) -> Promise<OrderAck>`                         | Modify an open order's price / quantity      |
+| `updateLeverage` | `updateLeverage(symbol, leverage) -> Promise<OrderAck>` | Set per-market leverage |
+| `massQuote` / `batchCancel` / `batchModify` | batch command methods | Manage multiple resting orders |
+| `cancelAllOrders` / `closeAll` / `reversePosition` | account-wide command methods | Bulk order/position management |
+| `amendTpsl` / `cancelTpsl` | TP/SL command methods | Manage attached TP/SL |
 
 ### Subscriptions
 
 | Method                                       | Purpose                                  |
 |----------------------------------------------|------------------------------------------|
-| `subscribe(['orders', 'positions'])`         | Subscribe to private push streams        |
+| `subscribe(['orders', 'positions', 'funding_rate'])` | This edge: `orders`, `positions`, `volume`, `open_interest`, `funding_rate`. Trades and L2 are not on `/ws/v1`. |
 | `unsubscribe([...])`                         | Unsubscribe from one or more streams     |
 
 ### Push callbacks + async iterators
@@ -78,6 +82,10 @@ The SDK exposes both **callback** and **async-iterator** forms for each push str
 |-----------------------------------------------|---------------------------------------|-----------------------------------------------------|
 | `onOrderUpdate((u: OrderUpdate) => void)`     | `orderUpdates(): AsyncIterableIterator<OrderUpdate>`     | Order lifecycle (open / filled / cancelled / ...)   |
 | `onPositionUpdate((u: PositionUpdate) => void)` | `positionUpdates(): AsyncIterableIterator<PositionUpdate>` | Per-fill position deltas                            |
+| `onPositionsSnapshot(...)` | `positionsSnapshots()` | Full positions snapshots |
+| `onOpenOrdersSnapshot(...)` | `openOrdersSnapshots()` | Full open-orders snapshots |
+| `onFundingRateUpdate(...)` | `fundingRateUpdates()` | Funding-rate updates |
+| `onLeverageSettings(...)` | `leverageSettingsUpdates()` | Leverage settings |
 | `onReconnect(() => void)`                     | (no iterator form)                    | Fired after auto-reconnect re-subscribes channels   |
 
 ### Error handling
@@ -88,30 +96,34 @@ The SDK exposes both **callback** and **async-iterator** forms for each push str
 
 ### Concurrency rule
 
-Only one trading command (`placeOrder`, `cancelOrder`, `modifyOrder`) should be in flight at a time. The example scripts await each call in sequence; do the same in your own code.
+Trading commands may be in flight concurrently. The SDK serializes HPKE nonce assignment and resolves encrypted acknowledgements by correlation ID. The examples await commands sequentially for readability.
 
 ## MarketDataClient API
 
-Public order-book and trades feed. No authentication required.
+Public `/ws/v1` channels are `volume`, `open_interest`, and `funding_rate`. Trades and the L2 order book are not on `/ws/v1`.
 
 ```typescript
 import { MarketDataClient } from '@godark/sdk';
 
-const md = new MarketDataClient('wss://api.godark-dex.com');
+const md = new MarketDataClient('wss://api.godark-dex.com/ws/v1');
 await md.connect();
-await md.subscribeOrderbook('BTC-USDC-PERP', (msg) => { /* ... */ });
-await md.subscribeTrades('BTC-USDC-PERP', (msg) => { /* ... */ });
-// ...
+await md.subscribePublicChannel('funding_rate', (msg) => { /* ... */ });
 await md.disconnect();
 ```
+
+## GodarkRestClient API
+
+After `connect()`, `authenticatedAccount` exposes the canonical Solana account identity (`authenticatedUserUuid` is a deprecated compatibility alias).
+
+`connect()` uses REST `grant_type=client_credentials`. Authenticated snapshots and reads: `getOpenOrders`, `getPositions`, `getAccount`, `getOrder`, `getOrderByClientOrderId`, and `getLeverage`. Encrypted trading: `placeOrder`, `cancelOrder`, `cancelOrderByClientId`, `modifyOrder`, `updateLeverage`, `massQuote`, `batchCancel`, and `batchModify`. `awaitTerminalStatus` polls order state. Public `getFundingRates`, `getOpenInterest`, and `getVolume` reads require no connection. REST place does not register a client-order id; registration is `POST /orders/_register_coid` only after a successful WebSocket place. A 400 from that call is a failure. Use `GodarkClient` when persistent private push streams are required.
 
 ## Core Types
 
 | Type             | Notable fields                                                                                                                                                |
 |------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `OrderAck`       | `orderId`, `success`, `sequence`, `errorCode?: string`, `error?: string`                                                                                      |
-| `OrderUpdate`    | `orderId`, `userUuid`, `symbolId`, `side`, `status`, `updateType`, `price`, `quantity`, `filledQty`, `remainingQty`, `cumFill`, `cancelReason?`, `timestamp`  |
-| `PositionUpdate` | `userUuid`, `symbolId`, `side`, `updateType`, `size`, `entryPrice`, `previousSize`, `fillPrice`, `fillQty`, `correlationId`, `timestamp`                      |
+| `OrderUpdate`    | `orderId`, `account`, `symbolId`, `side`, `status`, `updateType`, `price`, `quantity`, `filledQty`, `remainingQty`, `cumFill`, `cancelReason?`, `timestamp`   |
+| `PositionUpdate` | `account`, `symbolId`, `side`, `updateType`, `size`, `entryPrice`, `previousSize`, `fillPrice`, `fillQty`, `correlationId`, `timestamp`                       |
 
 All numeric fields that may overflow `Number.MAX_SAFE_INTEGER` (e.g. `orderId`, `price`, `quantity`, `filledQty`) are returned as decimal strings; convert with `BigInt(...)` when you need arithmetic.
 
@@ -127,7 +139,9 @@ String unions used by the public API:
 - `PositionUpdateType`: `'SNAPSHOT'`, `'OPEN'`, `'INCREASE'`, `'DECREASE'`, `'CLOSE'`
 - `CancelReason`: `'USER_REQUESTED'`, `'IOC_REMAINDER'`, `'FOK_NOT_FILLED'`, `'EXPIRED'`, `'SYSTEM'`, `'ADL'`, `'LIQUIDATED_CANCELED'`, `'MARGIN_CANCELED'`, `'REDUCE_ONLY'`, `'STP_EXPIRE_TAKER'`, `'STP_CANCEL_RESTING'`
 
-`PlaceOrderOptions` accepts `reduceOnly`, `postOnly`, `stpMode`, `pegOffsetBps`, `triggerPrice`, `takeProfitPrice`, and `stopLossPrice`. `PEG` pegs to the Pyth oracle mark.
+Prices, sizes, quote notional, min fill, trigger, take-profit, and stop-loss on place / modify / mass-quote / batch-modify / TP-SL are **decimal strings only** (e.g. `price: '67500.5'`, `quantity: '0.01'`). Numbers and floats are rejected; pass the user-typed decimal string.
+
+`PlaceOrderOptions` accepts `reduceOnly`, `postOnly`, `stpMode`, `pegOffsetBps`, `triggerPrice`, `takeProfitPrice`, `stopLossPrice` (price fields are decimal strings), and `slippageBps`. `slippageBps` applies only to `MARKET` and `STOP_MARKET`. Omit it to use the venue max walk cap (localnet 5%); typical explicit values are 50–500 bps (0.5%–5%). `PEG` pegs to the Pyth oracle mark and is incompatible with post-only.
 
 ## Errors
 
@@ -144,11 +158,13 @@ String unions used by the public API:
 
 | File                                  | What it does                                                                                          |
 |---------------------------------------|-------------------------------------------------------------------------------------------------------|
-| `examples/quickstart.ts`              | Minimal flow: connect → place limit sell → cancel → disconnect                                        |
-| `examples/full-trader-example.ts`     | Reference bot loop: private streams, market data, place / modify / cancel, mass-quote / batch-cancel |
+| `examples/quickstart.ts`              | Token login → subscribe `orders` → decimal-string limit sell → cancel                                 |
+| `examples/full-trader-example.ts`     | `orders` / `positions` / `funding_rate`, place / modify / cancel, market slippage, mass-quote / batch-cancel |
+| `examples/rest-client-example.ts`     | REST public reads, auth, encrypted account/open-orders snapshots, and leverage                      |
+| `examples/full-trader-rest.ts`        | REST encrypted snapshots plus place / modify / cancel round trip                                    |
 | `examples/dotenv.ts`                  | Shared `.env` loader + `OrderError` pretty-printer used by both example mains                         |
 
-Both example scripts run under `tsx` (a TypeScript runner for Node) via the `npm run quickstart` and `npm run full-trader` scripts. To rebuild your own `.ts` against the bundled SDK, `npm run typecheck` exercises a strict `tsc --noEmit` pass.
+The examples run under `tsx` via `npm run quickstart`, `npm run full-trader`, `npm run rest-client`, and `npm run full-trader-rest`. To check your own `.ts` against the bundled SDK, `npm run typecheck` exercises a strict `tsc --noEmit` pass.
 
 ## npm integration (your own bot)
 
