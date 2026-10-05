@@ -4,7 +4,7 @@ This is the comprehensive reference for maintainers and developers working *insi
 
 A trimmed, recipient-facing copy is maintained at [`bundle/SDK_REFERENCE.md`](bundle/SDK_REFERENCE.md) and is the one copied into the root of released ZIP bundles as `SDK_REFERENCE.md`. The bundle version intentionally omits sections that recipients don't need (refresh / parity / pin discipline, error-code internals, forward-compat strategy, SDK sourcing options).
 
-> Scope: the primary MM flow uses persistent HPKE WebSocket trading via `GodarkClient`. Public `/ws/v1` feeds are `volume`, `open_interest`, and `funding_rate` via `MarketDataClient`. The SDK also provides `GodarkRestClient` for Bearer-authenticated, one-shot HPKE REST snapshots and supported trading operations. Order placement support in these examples is limited to `MARKET` and `LIMIT`.
+> Scope: the primary MM flow uses persistent HPKE WebSocket trading via `GodarkClient`. Public `/ws/v1` feeds are `volume`, `open_interest`, and `funding_rate` via `MarketDataClient`. The SDK also provides `GodarkRestClient` for Bearer-authenticated, one-shot HPKE REST snapshots and supported trading operations. These examples place post-only `LIMIT` orders priced off the live mark.
 
 ## Quick Start
 
@@ -52,7 +52,7 @@ In this repository, the example scripts depend on the vendored tarball via the `
 ```json
 {
   "dependencies": {
-    "@godark/sdk": "file:./sdk/godark-sdk-0.1.0.tgz"
+    "@godark/sdk": "file:./sdk/godark-sdk-0.2.0.tgz"
   }
 }
 ```
@@ -273,8 +273,8 @@ The `OrderError.errorCode` field already carries the symbolic string for thrown 
 | File                                     | Purpose                                                                                           |
 |------------------------------------------|---------------------------------------------------------------------------------------------------|
 | `examples/quickstart.ts`                 | Token login, subscribe `orders`, decimal-string place, cancel                                     |
-| `examples/full-trader-example.ts`        | `orders` / `positions` / `funding_rate`, place / modify / cancel, market slippage, mass-quote / batch-cancel |
-| `examples/rest-client-example.ts`        | REST public reads, auth, encrypted account/open-orders snapshots, and leverage                    |
+| `examples/full-trader-example.ts`        | `orders` / `positions` / `funding_rate`, post-only place / modify / cancel, mass-quote / batch-cancel |
+| `examples/rest-client-example.ts`        | REST public reads, auth, encrypted account/open-orders snapshots                                  |
 | `examples/full-trader-rest.ts`           | REST encrypted snapshots plus place / modify / cancel round trip                                  |
 | `examples/dotenv.ts`                     | Shared helper (`loadDotenv` + `printOrderError`)                                                  |
 
@@ -330,4 +330,4 @@ The full upstream-change chain (proto → SDK → examples → release zip):
 
 ## RestClient examples
 
-`rest-client-example.ts` demonstrates public funding/OI/volume reads, REST authentication, encrypted account/open-orders snapshots, and leverage reads. `full-trader-rest.ts` demonstrates encrypted snapshots and a place/modify/cancel round trip. Both use the canonical `authenticatedAccount` accessor.
+`rest-client-example.ts` demonstrates public funding/OI/volume reads, REST authentication, and encrypted account/open-orders snapshots. `full-trader-rest.ts` demonstrates encrypted snapshots and a post-only place/modify/cancel round trip. Both use the canonical `authenticatedAccount` accessor.

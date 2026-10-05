@@ -21,7 +21,7 @@ option. The market-data feed uses `/ws/gomarket` and is not affected by the
 This distribution ships as a local tarball:
 
 ```bash
-npm install ./sdk/godark-sdk-0.1.0.tgz
+npm install ./sdk/godark-sdk-0.2.0.tgz
 ```
 
 Or reference it from your own `package.json`:
@@ -29,7 +29,7 @@ Or reference it from your own `package.json`:
 ```json
 {
   "dependencies": {
-    "@godark/sdk": "file:path/to/godark-sdk-0.1.0.tgz"
+    "@godark/sdk": "file:path/to/godark-sdk-0.2.0.tgz"
   }
 }
 ```

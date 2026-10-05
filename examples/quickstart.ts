@@ -1,9 +1,10 @@
 /**
  * GoDark SDK — Quickstart
  *
- * WebSocket login (REST access token), subscribe to orders, place a far
- * limit sell as decimal strings, then cancel. Read positions with
- * `npm run full-trader-rest` (`getPositions`) or the `positions` channel.
+ * WebSocket login (REST access token), subscribe to orders, place a
+ * post-only limit sell at least 500 above the live mark, then cancel.
+ * Read positions with `npm run full-trader-rest` (`getPositions`) or the
+ * `positions` channel.
  *
  *   npm run quickstart
  *
@@ -13,6 +14,7 @@
  *   GODARK_EDGE_URL (optional; default Environment.Testnet)
  *   GODARK_ACCOUNT / GDX_ACCOUNT (optional account fallback for local auth)
  *   GODARK_HPKE_STATIC_PUBLIC_KEY / GDX_HPKE_STATIC_PUBLIC_KEY (optional)
+ *   GODARK_E2E_PRICE / GDX_E2E_PRICE / GDX_LIVE_PRICE (optional mark override)
  */
 import {
   ConnectionError,
@@ -21,13 +23,18 @@ import {
   SessionError,
 } from '@godark/sdk';
 
-import { envFirst, loadDotenv, printOrderError } from './dotenv.js';
+import {
+  CANCEL_DELAY_MS,
+  MAX_DEMO_QTY,
+  envFirst,
+  loadDotenv,
+  postOnlySellPrice,
+  printOrderError,
+  resolveLiveMark,
+  sleep,
+} from './dotenv.js';
 
 const SYMBOL = 'BTC-USDC-PERP';
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 /** Stop auto-reconnect, then open a fresh authenticated + HPKE session. */
 async function recoverSession(client: GodarkClient): Promise<void> {
@@ -87,8 +94,18 @@ async function main(): Promise<void> {
     Object.assign(clientOpts, { apiKeyId, apiSecret, passphrase });
   }
 
+  let mark: number;
+  try {
+    mark = await resolveLiveMark(SYMBOL);
+  } catch (err) {
+    printOrderError('quickstart', err);
+    process.exit(1);
+  }
+
   const client = new GodarkClient(clientOpts);
   client.onReconnect(() => console.warn('RECONNECTED — channels restored'));
+  let orderId: string | undefined;
+  let failed = false;
 
   try {
     await client.connect();
@@ -96,11 +113,7 @@ async function main(): Promise<void> {
 
     await client.subscribe(['orders']);
 
-    const mark = Number(
-      envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'),
-    );
-    // Decimal strings only: format locally; numbers/floats are rejected.
-    const sellPx = (Math.round(mark * 1.03 * 10) / 10).toFixed(1);
+    const sellPx = postOnlySellPrice(mark);
     const recover = () => recoverSession(client);
 
     const ack = await withOneRetry(
@@ -111,30 +124,47 @@ async function main(): Promise<void> {
           side: 'SELL',
           orderType: 'LIMIT',
           price: sellPx,
-          quantity: '0.01',
+          quantity: MAX_DEMO_QTY,
           postOnly: true,
           confirmation: 'ack',
         }),
       recover,
     );
-    console.log(`Place OK -- order_id=${ack.orderId} (limit SELL @ ${sellPx}, mark=${mark})`);
+    if (!ack.success || !ack.orderId) {
+      throw new Error('placeOrder did not return an order id');
+    }
+    orderId = ack.orderId;
+    console.log(`Place OK -- order_id=${ack.orderId} (post-only SELL @ ${sellPx}, mark=${mark})`);
 
-    // Allow the resting order to settle before cancel (avoids CANCEL_TOO_SOON).
-    await sleep(500);
+    await sleep(CANCEL_DELAY_MS);
 
     const cancel = await withOneRetry(
       'cancelOrder',
       () => client.cancelOrder(ack.orderId, SYMBOL),
       recover,
     );
+    if (!cancel.success) {
+      throw new Error(`cancelOrder failed for ${ack.orderId}`);
+    }
+    orderId = undefined;
     console.log(`cancel OK -- order_id=${cancel.orderId}`);
-
-    await client.disconnect();
-    console.log('Disconnected');
   } catch (err) {
+    failed = true;
     printOrderError('quickstart', err);
-    process.exit(1);
+    if (orderId) {
+      try {
+        await sleep(CANCEL_DELAY_MS);
+        await client.cancelOrder(orderId, SYMBOL);
+        orderId = undefined;
+      } catch (cancelErr) {
+        printOrderError('quickstart cleanup cancel', cancelErr);
+      }
+    }
+  } finally {
+    await client.disconnect().catch(() => {});
+    console.log('Disconnected');
   }
+  if (failed || orderId) process.exit(1);
 }
 
 main();

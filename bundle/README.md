@@ -3,7 +3,7 @@
 This package provides the GoDark JavaScript SDK and minimal examples for
 encrypted darkpool trading.
 
-Supported order types in this distribution: `MARKET`, `LIMIT`.
+These examples place post-only `LIMIT` orders priced off the live mark.
 
 ## Package contents
 
@@ -55,7 +55,7 @@ The OS environment always wins over `.env`.
 3. **REST auth** — `npm run rest-client` (`client_credentials` token).
 4. **WebSocket login** — `npm run quickstart` logs in with that access token, not `key:secret:passphrase`.
 5. **Subscribe** — `orders`, `positions`, `volume`, `open_interest`, `funding_rate`. Trades and L2 order book are not on `/ws/v1`.
-6. **Place** — decimal strings only (`"0.001"`, `"67500.5"`). `slippageBps` only on `MARKET` and `STOP_MARKET`. Peg is incompatible with post-only.
+6. **Place** — decimal strings only (`"0.001"`, `"67500.5"`). Samples use post-only `LIMIT` orders at least 500 away from the live mark, then cancel. `slippageBps` only on `MARKET` and `STOP_MARKET`. Peg is incompatible with post-only.
 7. **Read a position** — `npm run full-trader-rest` (`getPositions`) or the `positions` channel in `npm run full-trader`.
 8. **Cancel** — by the returned order id.
 
@@ -74,7 +74,7 @@ Available scripts (see `package.json`):
 |---------------------------|-------------------------------------|---------------------------------------------------------------------------------|
 | `npm run quickstart`      | `examples/quickstart.ts`            | Token login → subscribe orders → decimal-string limit sell → cancel             |
 | `npm run full-trader`     | `examples/full-trader-example.ts`   | `orders` / `positions` / `funding_rate`, place/modify/cancel, mass-quote / batch-cancel |
-| `npm run rest-client`     | `examples/rest-client-example.ts`   | Public REST reads, auth, encrypted snapshots, and leverage                      |
+| `npm run rest-client`     | `examples/rest-client-example.ts`   | Public REST reads, auth, and encrypted snapshots                                |
 | `npm run full-trader-rest` | `examples/full-trader-rest.ts`     | One-shot HPKE REST snapshots plus place/modify/cancel                           |
 | `npm run typecheck`       | (all)                               | `tsc --noEmit` — catches API drift after editing your own scripts               |
 
@@ -87,7 +87,7 @@ Add the tarball from `sdk/` to your `package.json`:
 {
   "type": "module",
   "dependencies": {
-    "@godark/sdk": "file:path/to/this-bundle/sdk/godark-sdk-0.1.0.tgz"
+    "@godark/sdk": "file:path/to/this-bundle/sdk/godark-sdk-0.2.0.tgz"
   }
 }
 ```
@@ -100,6 +100,7 @@ import { GodarkClient } from '@godark/sdk';
 const client = new GodarkClient({
   apiKeyId: process.env.GODARK_API_KEY_ID!,
   apiSecret: process.env.GODARK_API_SECRET!,
+  passphrase: process.env.GODARK_PASSPHRASE!,
 });
 
 await client.connect();
@@ -108,7 +109,8 @@ const ack = await client.placeOrder({
   side: 'SELL',
   orderType: 'LIMIT',
   price: '999999', // decimal string only — numbers are rejected
-  quantity: '0.01',
+  quantity: '0.001',
+  postOnly: true,
 });
 await client.cancelOrder(ack.orderId, 'BTC-USDC-PERP');
 await client.disconnect();
