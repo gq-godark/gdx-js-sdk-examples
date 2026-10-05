@@ -201,7 +201,6 @@ async function runStrategy(): Promise<void> {
   } catch (e: unknown) {
     if (e instanceof GodarkError) {
       console.error('Failed to connect:', e.message);
-      return;
     }
     throw e;
   }

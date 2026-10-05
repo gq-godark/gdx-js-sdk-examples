@@ -53,30 +53,12 @@ async function main(): Promise<void> {
       tokenScope: client.tokenScope,
     });
 
-    try {
-      const open = await client.getOpenOrders();
-      console.log(`open_orders: ${open.rows.length} rows`);
-    } catch (err) {
-      console.log(`getOpenOrders skipped: ${err instanceof Error ? err.message : err}`);
-    }
-
-    try {
-      const account = await client.getAccount();
-      console.log('account', account.summary?.totalCollateral);
-    } catch (err) {
-      console.log(`getAccount skipped: ${err instanceof Error ? err.message : err}`);
-    }
-
-    try {
-      const lev = await client.getLeverage();
-      console.log(`leverage settings: ${lev.settings.length} entries`);
-      console.log('  (WS push: onLeverageSettings in full-trader-example.ts)');
-      for (const row of lev.settings.slice(0, 5)) {
-        console.log(`  symbol_id=${row.symbolId} leverage=${row.leverage}`);
-      }
-    } catch (err) {
-      console.log(`getLeverage skipped: ${err instanceof Error ? err.message : err}`);
-    }
+    const positions = await client.getPositions();
+    const open = await client.getOpenOrders();
+    const account = await client.getAccount();
+    console.log(`positions: ${positions.rows.length} rows`);
+    console.log(`open_orders: ${open.rows.length} rows`);
+    console.log(`account total_collateral=${account.summary?.totalCollateral ?? '?'}`);
 
     console.log('REST reads succeeded.');
     console.log('For REST trading (place/modify/cancel), see full-trader-rest.ts.');
