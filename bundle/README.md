@@ -57,7 +57,7 @@ The OS environment always wins over `.env`.
 5. **Subscribe** — `orders`, `positions`, `volume`, `open_interest`, `funding_rate`. Trades and L2 order book are not on `/ws/v1`.
 6. **Place** — decimal strings only (`"0.001"`, `"67500.5"`). `slippageBps` only on `MARKET` and `STOP_MARKET`. Peg is incompatible with post-only.
 7. **Read a position** — `npm run full-trader-rest` (`getPositions`) or the `positions` channel in `npm run full-trader`.
-8. **Cancel** — by the returned order id, or `cancelAllOrders` in the quickstart.
+8. **Cancel** — by the returned order id.
 
 Client-order ids register only after a successful WebSocket place. REST place does not register them. A 400 from `POST /orders/_register_coid` is a failure.
 

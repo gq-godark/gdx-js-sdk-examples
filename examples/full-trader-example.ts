@@ -256,24 +256,8 @@ async function runStrategy(): Promise<void> {
     await new Promise((r) => setTimeout(r, 1000));
   }
 
-  // slippageBps is valid only on MARKET and STOP_MARKET (50 bps = 0.5% of mark).
-  // Omit it to use the venue max walk (localnet 5%). PEG cannot be post-only.
-  console.log('Placing market IOC BUY qty=0.01 with slippageBps=50 (0.5% walk)...');
-  try {
-    const mktAck = await client.placeOrder({
-      symbol: SYMBOL,
-      side: 'BUY',
-      orderType: 'MARKET',
-      quantity: '0.01',
-      timeInForce: 'IOC',
-      slippageBps: 50,
-    });
-    console.log(`MARKET BUY placed: order_id=${mktAck.orderId}`);
-  } catch (e: unknown) {
-    printOrderError('Market BUY rejected (continuing)', e);
-  }
-
-  await new Promise((r) => setTimeout(r, 1000));
+  // A market IOC can fill and leave a position. This sample does not send one.
+  console.log('Skipping market IOC so the sample does not open a position.');
 
   const sellPx = (Math.round(mark * 1.03 * 10) / 10).toFixed(1);
   console.log(`Placing limit SELL @ ${sellPx}...`);
@@ -337,14 +321,14 @@ async function runStrategy(): Promise<void> {
   await new Promise((r) => setTimeout(r, 1000));
 
   if (restingIds.length > 0) {
-    console.log('cancel_all_orders (cleanup ladder)...');
-    try {
-      const ca = await client.cancelAllOrders(SYMBOL);
-      console.log(
-        `  cancel_all: count=${ca.count} ids=[${ca.orderIds.join(', ')}]`,
-      );
-    } catch (e: unknown) {
-      printOrderError('cancel_all rejected', e);
+    console.log(`Cancelling ${restingIds.length} ladder order(s) by id...`);
+    for (const id of restingIds) {
+      try {
+        const ca = await client.cancelOrder(id, SYMBOL);
+        console.log(`  cancel order_id=${ca.orderId}`);
+      } catch (e: unknown) {
+        printOrderError(`cancel ${id} rejected`, e);
+      }
     }
     await new Promise((r) => setTimeout(r, 500));
   }
@@ -367,15 +351,14 @@ async function runStrategy(): Promise<void> {
   }
   await new Promise((r) => setTimeout(r, 500));
 
-  // postOnly=false (relaxed): crossing leg takes liquidity, then rests remainder.
-  console.log('Mass-quoting a crossing BUY with postOnly=false (expect filled, fills>0)...');
-  // The relaxed leg may rest a remainder after taking liquidity; track its id so
-  // it gets cleaned up below instead of leaking onto the book.
+  // postOnly=false still prices below the mark so the leg rests instead of filling.
+  const restPx = round1(base * 0.95);
+  console.log(`Mass-quoting a resting BUY @ ${restPx} with postOnly=false (cancelled by id)...`);
   const strayIds: string[] = [];
   try {
     const mq = await client.massQuote(
       SYMBOL,
-      [{ side: 'BUY', price: crossPx, quantity: '0.003' }],
+      [{ side: 'BUY', price: restPx, quantity: '0.003' }],
       false,
     );
     for (const r of mq.results) {

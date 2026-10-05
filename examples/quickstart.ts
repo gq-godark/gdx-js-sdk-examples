@@ -123,11 +123,11 @@ async function main(): Promise<void> {
     await sleep(500);
 
     const cancel = await withOneRetry(
-      'cancelAllOrders',
-      () => client.cancelAllOrders(SYMBOL),
+      'cancelOrder',
+      () => client.cancelOrder(ack.orderId, SYMBOL),
       recover,
     );
-    console.log(`cancel_all OK -- count=${cancel.count} ids=[${cancel.orderIds.join(', ')}]`);
+    console.log(`cancel OK -- order_id=${cancel.orderId}`);
 
     await client.disconnect();
     console.log('Disconnected');

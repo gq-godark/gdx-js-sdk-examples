@@ -71,7 +71,7 @@ Follow the examples in this order against the hosted edge (`wss://api.godark-dex
 5. **Subscribe** — channels on this edge are `orders`, `positions`, `volume`, `open_interest`, and `funding_rate`. Trades and the L2 order book are not on `/ws/v1`.
 6. **Place** — prices, sizes, quote notional, min fill, trigger, take-profit, and stop-loss are decimal strings (`"0.001"`, `"67500.5"`). Numbers are rejected. `slippageBps` is only for `MARKET` and `STOP_MARKET`. `PEG` cannot be combined with post-only.
 7. **Read a position** — `npm run full-trader-rest` calls `getPositions`, or subscribe to `positions` in `npm run full-trader`.
-8. **Cancel** — quickstart calls `cancelAllOrders`; the REST trader cancels the order id returned by place.
+8. **Cancel** — quickstart calls `cancelOrder` on the order id just placed; the REST trader does the same.
 
 A client-order id is registered only after a successful WebSocket place (`POST /orders/_register_coid`). REST place does not register one. A 400 from that endpoint is a failure.
 
