@@ -2,7 +2,7 @@
 
 This reference describes the API surface used by the examples shipped in this distribution. The primary market-maker flow uses the persistent HPKE WebSocket client, `GodarkClient`. Public `/ws/v1` feeds are `volume`, `open_interest`, and `funding_rate`. The SDK also provides `GodarkRestClient` for Bearer-authenticated, one-shot HPKE REST snapshots and supported trading operations.
 
-Order placement support in this MM distribution is limited to `MARKET` and `LIMIT`.
+These examples place post-only `LIMIT` orders priced off the live mark.
 
 ## Quick Start
 
@@ -12,6 +12,7 @@ import { GodarkClient } from '@godark/sdk';
 const client = new GodarkClient({
   apiKeyId:  process.env.GODARK_API_KEY_ID!,
   apiSecret: process.env.GODARK_API_SECRET!,
+  passphrase: process.env.GODARK_PASSPHRASE!,
   // baseUrl defaults to wss://api.godark-dex.com when omitted
 });
 
@@ -159,8 +160,8 @@ Prices, sizes, quote notional, min fill, trigger, take-profit, and stop-loss on 
 | File                                  | What it does                                                                                          |
 |---------------------------------------|-------------------------------------------------------------------------------------------------------|
 | `examples/quickstart.ts`              | Token login → subscribe `orders` → decimal-string limit sell → cancel                                 |
-| `examples/full-trader-example.ts`     | `orders` / `positions` / `funding_rate`, place / modify / cancel, market slippage, mass-quote / batch-cancel |
-| `examples/rest-client-example.ts`     | REST public reads, auth, encrypted account/open-orders snapshots, and leverage                      |
+| `examples/full-trader-example.ts`     | `orders` / `positions` / `funding_rate`, post-only place / modify / cancel, mass-quote / batch-cancel |
+| `examples/rest-client-example.ts`     | REST public reads, auth, and encrypted account/open-orders snapshots                                |
 | `examples/full-trader-rest.ts`        | REST encrypted snapshots plus place / modify / cancel round trip                                    |
 | `examples/dotenv.ts`                  | Shared `.env` loader + `OrderError` pretty-printer used by both example mains                         |
 

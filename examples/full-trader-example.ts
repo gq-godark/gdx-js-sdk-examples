@@ -11,9 +11,11 @@
  *   GODARK_TLS_SKIP_VERIFY / GDX_TLS_SKIP_VERIFY
  */
 import {
+  ConnectionError,
   Environment,
   GodarkClient,
   GodarkError,
+  GodarkRestClient,
   type FundingRateUpdate,
   type LeverageSettings,
   type MassQuoteLegInput,
@@ -23,7 +25,17 @@ import {
   type TransportOptions,
 } from '@godark/sdk';
 
-import { envFirst, loadDotenv, printOrderError } from './dotenv.js';
+import {
+  CANCEL_DELAY_MS,
+  MAX_DEMO_QTY,
+  envFirst,
+  loadDotenv,
+  postOnlyBuyPrice,
+  postOnlySellPrice,
+  printOrderError,
+  resolveLiveMark,
+  sleep,
+} from './dotenv.js';
 
 loadDotenv();
 
@@ -52,7 +64,7 @@ const transportOptions: TransportOptions = {
   staleTimeout: 120_000,
   missedHeartbeatLimit: 2,
   wsOptions: {
-    maxPayload: 65_536,
+    maxPayload: 1_048_576,
     handshakeTimeout: 10_000,
     ...(tlsSkip ? { rejectUnauthorized: false } : {}),
   },
@@ -153,30 +165,71 @@ function makeClient(): GodarkClient {
   });
 }
 
-async function drainOrderUpdatesForMs(
+function waitForReconnect(client: GodarkClient, ms: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new ConnectionError('reconnect timed out')),
+      ms,
+    );
+    client.onReconnect(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+/** One retry after auto-reconnect when the socket drops between commands. */
+async function withReconnect<T>(
   client: GodarkClient,
-  ms: number,
-): Promise<number> {
-  let count = 0;
-  const iter = client.orderUpdates();
-  const deadline = Date.now() + ms;
+  fn: () => Promise<T>,
+): Promise<T> {
   try {
-    while (Date.now() < deadline) {
-      const step = await Promise.race([
-        iter.next(),
-        new Promise<IteratorResult<OrderUpdate>>((resolve) =>
-          setTimeout(() => resolve({ done: true, value: undefined }), 80),
-        ),
-      ]);
-      if (step.done || !('value' in step) || step.value === undefined) break;
-      count += 1;
-      const u = step.value;
-      console.log(`  (queued) order_id=${u.orderId} status=${u.status}`);
-    }
-  } finally {
-    await iter.return?.();
+    return await fn();
+  } catch (err) {
+    if (!(err instanceof ConnectionError)) throw err;
+    console.warn('connection dropped — waiting for reconnect...');
+    await waitForReconnect(client, 8_000);
+    return await fn();
   }
-  return count;
+}
+
+async function cancelViaRest(orderId: string): Promise<void> {
+  const kid = envFirst(['GODARK_API_KEY_ID', 'GDX_API_KEY_ID']);
+  const secret = envFirst(['GODARK_API_SECRET', 'GDX_API_SECRET']);
+  const passphrase = envFirst(['GODARK_PASSPHRASE', 'GDX_PASSPHRASE']);
+  const legacy = envFirst(['GODARK_API_KEY', 'GDX_API_KEY']);
+  const restBase = envFirst(['GODARK_REST_URL', 'GDX_REST_URL'], '') || undefined;
+  const edge = envFirst(['GODARK_EDGE_URL', 'GDX_EDGE_URL'], '');
+  const restBaseUrl =
+    restBase ||
+    (edge
+      ? edge.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:').replace(/\/+$/, '')
+      : undefined);
+  const account = envFirst(['GODARK_ACCOUNT', 'GDX_ACCOUNT'], '') || undefined;
+  const rest =
+    kid && secret && passphrase
+      ? new GodarkRestClient({
+          apiKeyId: kid,
+          apiSecret: secret,
+          passphrase,
+          ...(restBaseUrl ? { restBaseUrl } : {}),
+          ...(account ? { account } : {}),
+        })
+      : legacy
+        ? new GodarkRestClient({
+            apiKey: legacy,
+            ...(restBaseUrl ? { restBaseUrl } : {}),
+            ...(account ? { account } : {}),
+          })
+        : null;
+  if (!rest) throw new Error('no credentials for REST cleanup cancel');
+  try {
+    await rest.connect();
+    const ack = await rest.cancelOrder(orderId, SYMBOL);
+    if (!ack.success) throw new Error(`REST cancel failed for ${orderId}`);
+  } finally {
+    await rest.disconnect().catch(() => {});
+  }
 }
 
 async function runStrategy(): Promise<void> {
@@ -195,14 +248,23 @@ async function runStrategy(): Promise<void> {
   client.onLeverageSettings(onLeverageSettings);
   client.onReconnect(onReconnect);
 
+  let mark: number;
+  try {
+    mark = await resolveLiveMark(SYMBOL);
+  } catch (e: unknown) {
+    printOrderError('live mark', e);
+    throw e;
+  }
+  console.log(`Live mark=${mark}`);
+
   console.log('Connecting...');
   try {
     await client.connect();
   } catch (e: unknown) {
     if (e instanceof GodarkError) {
       console.error('Failed to connect:', e.message);
-      return;
     }
+    await client.disconnect().catch(() => {});
     throw e;
   }
 
@@ -210,218 +272,164 @@ async function runStrategy(): Promise<void> {
     `Authenticated as account=${client.account}  (HPKE session, buffer=${STREAM_BUFFER})`,
   );
 
-  await client.subscribe(['orders', 'positions', 'funding_rate']);
-  console.log('Subscribed to order + position + funding updates');
+  const open = new Set<string>();
 
-  // `client.updateLeverage(SYMBOL, leverage)` is available over this encrypted
-  // WebSocket. This reference flow avoids changing account configuration.
-  console.log('Skipping leverage mutation in the reference flow.');
+  const note = (id: string | undefined): void => {
+    if (id) open.add(id);
+  };
+  const forget = (id: string | undefined): void => {
+    if (id) open.delete(id);
+  };
 
-  const mark = Number(envFirst(['GODARK_E2E_PRICE', 'GDX_E2E_PRICE', 'GDX_LIVE_PRICE'], '79000'));
-  // Decimal strings only: format locally; numbers/floats are rejected.
-  const buyPx = (Math.round(mark * 0.997 * 10) / 10).toFixed(1);
-  console.log(`Placing limit BUY @ ${buyPx} (mark=${mark})...`);
-  let buyAck: OrderAck | undefined;
   try {
-    buyAck = await client.placeOrder({
+    await client.subscribe(['orders', 'positions', 'funding_rate']);
+    console.log('Subscribed to order + position + funding updates');
+
+    // `client.updateLeverage(SYMBOL, leverage)` is available over this encrypted
+    // WebSocket. This reference flow avoids changing account configuration.
+    console.log('Skipping leverage mutation in the reference flow.');
+
+    const buyPx = postOnlyBuyPrice(mark);
+    console.log(`Placing post-only BUY @ ${buyPx} qty=${MAX_DEMO_QTY} (mark=${mark})...`);
+    const buyAck: OrderAck = await client.placeOrder({
       symbol: SYMBOL,
       side: 'BUY',
       orderType: 'LIMIT',
       price: buyPx,
-      quantity: '0.1',
+      quantity: MAX_DEMO_QTY,
+      postOnly: true,
       timeInForce: 'GTC',
     });
+    if (!buyAck.success || !buyAck.orderId) {
+      throw new Error('BUY place did not return an order id');
+    }
+    note(buyAck.orderId);
     console.log(`BUY placed: order_id=${buyAck.orderId}  sequence=${buyAck.sequence}`);
-  } catch (e: unknown) {
-    if (e instanceof GodarkError) {
-      printOrderError('BUY rejected (continuing to market Place)', e);
-    } else {
-      throw e;
-    }
-  }
 
-  await new Promise((r) => setTimeout(r, 1000));
-
-  if (buyAck) {
-    const modifyPx = (Math.round(mark * 0.996 * 10) / 10).toFixed(1);
+    await sleep(CANCEL_DELAY_MS);
+    const modifyPx = postOnlyBuyPrice(mark, 100);
     console.log(`Modifying order price to ${modifyPx}...`);
-    try {
-      const modAck = await client.modifyOrder(buyAck.orderId, SYMBOL, {
-        newPrice: modifyPx,
-      });
-      console.log(`Modified: order_id=${modAck.orderId}`);
-    } catch (e: unknown) {
-      printOrderError('MODIFY (may have filled before modify took)', e);
-    }
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-
-  // slippageBps is valid only on MARKET and STOP_MARKET (50 bps = 0.5% of mark).
-  // Omit it to use the venue max walk (localnet 5%). PEG cannot be post-only.
-  console.log('Placing market IOC BUY qty=0.01 with slippageBps=50 (0.5% walk)...');
-  try {
-    const mktAck = await client.placeOrder({
-      symbol: SYMBOL,
-      side: 'BUY',
-      orderType: 'MARKET',
-      quantity: '0.01',
-      timeInForce: 'IOC',
-      slippageBps: 50,
+    const modAck = await client.modifyOrder(buyAck.orderId, SYMBOL, {
+      newPrice: modifyPx,
     });
-    console.log(`MARKET BUY placed: order_id=${mktAck.orderId}`);
-  } catch (e: unknown) {
-    printOrderError('Market BUY rejected (continuing)', e);
-  }
+    if (!modAck.success) throw new Error(`modify failed for ${buyAck.orderId}`);
+    console.log(`Modified: order_id=${modAck.orderId}`);
 
-  await new Promise((r) => setTimeout(r, 1000));
-
-  const sellPx = (Math.round(mark * 1.03 * 10) / 10).toFixed(1);
-  console.log(`Placing limit SELL @ ${sellPx}...`);
-  try {
+    await sleep(CANCEL_DELAY_MS);
+    const sellPx = postOnlySellPrice(mark);
+    console.log(`Placing post-only SELL @ ${sellPx}...`);
     const sellAck = await client.placeOrder({
       symbol: SYMBOL,
       side: 'SELL',
       orderType: 'LIMIT',
       price: sellPx,
-      quantity: '0.05',
+      quantity: MAX_DEMO_QTY,
       postOnly: true,
     });
+    if (!sellAck.success || !sellAck.orderId) {
+      throw new Error('SELL place did not return an order id');
+    }
+    note(sellAck.orderId);
     console.log(`SELL placed: order_id=${sellAck.orderId}`);
 
-    await new Promise((r) => setTimeout(r, 500));
-
-    const cancelAck = await client.cancelOrder(sellAck.orderId, SYMBOL);
+    await sleep(CANCEL_DELAY_MS);
+    const cancelAck = await withReconnect(client, () =>
+      client.cancelOrder(sellAck.orderId, SYMBOL),
+    );
+    if (!cancelAck.success) throw new Error(`SELL cancel failed for ${sellAck.orderId}`);
+    forget(sellAck.orderId);
     console.log(`SELL cancelled: order_id=${cancelAck.orderId}`);
-  } catch (e: unknown) {
-    printOrderError('SELL/CANCEL', e);
-  }
 
-  await new Promise((r) => setTimeout(r, 1000));
-
-  console.log('Draining any remaining queued updates (short window)...');
-  const drained = await drainOrderUpdatesForMs(client, 400);
-  console.log(`Drained ${drained} queued order update(s)`);
-
-  // --- Bulk quote (mass quote) ---
-  // Place a whole ladder of resting quotes in one batched request. Leaving
-  // postOnly undefined (or true) keeps post-only behaviour: a leg that would
-  // cross is rejected as "failed" so the batch fuses into a single MPC round.
-  // Pass postOnly: false for the relaxed path, where a crossing leg takes
-  // liquidity up to its limit and rests the remainder (the number of taker
-  // fills is reported per leg as fillCount).
-  // Anchor ladder/cross prices to GODARK_E2E_PRICE / GDX_LIVE_PRICE (or GDX_BASE).
-  const base = Number(process.env.GDX_BASE ?? String(mark)) || mark;
-  const round1 = (x: number) => (Math.round(x * 10) / 10).toFixed(1);
-  console.log(`Mass-quoting a 3-level BUY ladder (post-only), base=${base.toFixed(2)}...`);
-  const ladder: MassQuoteLegInput[] = [
-    { side: 'BUY', price: round1(base * (1 - 0.003)), quantity: '0.02' },
-    { side: 'BUY', price: round1(base * (1 - 0.006)), quantity: '0.02' },
-    { side: 'BUY', price: round1(base * (1 - 0.009)), quantity: '0.02' },
-  ];
-  const restingIds: string[] = [];
-  try {
-    const mq = await client.massQuote(SYMBOL, ladder);
+    // Post-only bids at least 500 / 700 / 900 below the mark. Every leg is
+    // cancelled below, including via batchCancel.
+    console.log(`Mass-quoting a 3-level post-only BUY ladder, mark=${mark.toFixed(2)}...`);
+    const ladder: MassQuoteLegInput[] = [
+      { side: 'BUY', price: postOnlyBuyPrice(mark, 0), quantity: MAX_DEMO_QTY },
+      { side: 'BUY', price: postOnlyBuyPrice(mark, 200), quantity: MAX_DEMO_QTY },
+      { side: 'BUY', price: postOnlyBuyPrice(mark, 400), quantity: MAX_DEMO_QTY },
+    ];
+    const mq = await withReconnect(client, () =>
+      client.massQuote(SYMBOL, ladder, true),
+    );
     console.log(
       `Mass quote: success=${mq.success} sequence=${mq.sequence} legs=${mq.results.length}`,
     );
+    const quoteIds: string[] = [];
     for (const r of mq.results) {
       console.log(
         `  leg ${r.legIndex}: status=${r.status} new_order_id=${r.newOrderId ?? '-'} fills=${r.fillCount} err=${r.errorCode ?? '-'}`,
       );
-      if (r.status === 'open' && r.newOrderId) restingIds.push(r.newOrderId);
-    }
-  } catch (e: unknown) {
-    printOrderError('MASS QUOTE', e);
-  }
-
-  await new Promise((r) => setTimeout(r, 1000));
-
-  if (restingIds.length > 0) {
-    console.log('cancel_all_orders (cleanup ladder)...');
-    try {
-      const ca = await client.cancelAllOrders(SYMBOL);
-      console.log(
-        `  cancel_all: count=${ca.count} ids=[${ca.orderIds.join(', ')}]`,
-      );
-    } catch (e: unknown) {
-      printOrderError('cancel_all rejected', e);
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-
-  // Demonstrate the batch-level postOnly flag on a crossing leg.
-  const crossPx = round1(base * 1.05);
-  // postOnly=true: a crossing leg is rejected (would-cross, error_code 2018).
-  console.log('Mass-quoting a crossing BUY with postOnly=true (expect rejected/2018)...');
-  try {
-    const mq = await client.massQuote(
-      SYMBOL,
-      [{ side: 'BUY', price: crossPx, quantity: '0.001' }],
-      true,
-    );
-    for (const r of mq.results) {
-      console.log(`  leg ${r.legIndex}: status=${r.status} err=${r.errorCode ?? '-'} fills=${r.fillCount}`);
-    }
-  } catch (e: unknown) {
-    printOrderError('MASS QUOTE postOnly=true', e);
-  }
-  await new Promise((r) => setTimeout(r, 500));
-
-  // postOnly=false (relaxed): crossing leg takes liquidity, then rests remainder.
-  console.log('Mass-quoting a crossing BUY with postOnly=false (expect filled, fills>0)...');
-  // The relaxed leg may rest a remainder after taking liquidity; track its id so
-  // it gets cleaned up below instead of leaking onto the book.
-  const strayIds: string[] = [];
-  try {
-    const mq = await client.massQuote(
-      SYMBOL,
-      [{ side: 'BUY', price: crossPx, quantity: '0.003' }],
-      false,
-    );
-    for (const r of mq.results) {
-      console.log(
-        `  leg ${r.legIndex}: status=${r.status} new_order_id=${r.newOrderId ?? '-'} err=${r.errorCode ?? '-'} fills=${r.fillCount}`,
-      );
-      if (r.status === 'open' && r.newOrderId) strayIds.push(r.newOrderId);
-    }
-  } catch (e: unknown) {
-    printOrderError('MASS QUOTE postOnly=false', e);
-  }
-  await new Promise((r) => setTimeout(r, 1000));
-
-  if (strayIds.length > 0) {
-    console.log(`Batch-cancelling ${strayIds.length} relaxed-leg remainder(s) (cleanup)...`);
-    try {
-      const bc = await client.batchCancel(SYMBOL, strayIds);
-      for (const r of bc.results) {
-        console.log(`  cancel id=${r.orderId}: cancelled=${r.cancelled} err=${r.errorCode ?? '-'}`);
+      if (r.fillCount > 0) {
+        note(r.newOrderId);
+        throw new Error(`mass-quote leg ${r.legIndex} filled`);
       }
-    } catch (e: unknown) {
-      printOrderError('BATCH CANCEL (remainder)', e);
+      if (r.status !== 'open' || !r.newOrderId) {
+        throw new Error(
+          `mass-quote leg ${r.legIndex} status=${r.status} err=${r.errorCode ?? '-'}`,
+        );
+      }
+      note(r.newOrderId);
+      quoteIds.push(r.newOrderId);
     }
-    await new Promise((r) => setTimeout(r, 500));
-  }
 
-  if (buyAck) {
-    console.log('Cancelling original BUY (cleanup)...');
-    try {
-      await client.cancelOrder(buyAck.orderId, SYMBOL);
-      console.log('Original BUY cancelled');
-    } catch {
-      console.log('Original BUY already filled or cancelled');
+    await sleep(CANCEL_DELAY_MS);
+    console.log(`Batch-cancelling ${quoteIds.length} ladder order(s)...`);
+    const bc = await withReconnect(client, () =>
+      client.batchCancel(SYMBOL, quoteIds),
+    );
+    if (!bc.success) throw new Error('batchCancel reported failure');
+    for (const r of bc.results) {
+      console.log(`  cancel id=${r.orderId}: cancelled=${r.cancelled} err=${r.errorCode ?? '-'}`);
+      if (!r.cancelled) throw new Error(`batchCancel did not cancel ${r.orderId}`);
+      forget(r.orderId);
+    }
+
+    await sleep(CANCEL_DELAY_MS);
+    console.log('Cancelling original BUY...');
+    const buyCancel = await withReconnect(client, () =>
+      client.cancelOrder(buyAck.orderId, SYMBOL),
+    );
+    if (!buyCancel.success) throw new Error(`BUY cancel failed for ${buyAck.orderId}`);
+    forget(buyAck.orderId);
+    console.log('Original BUY cancelled');
+
+    console.log('='.repeat(60));
+    console.log('  Session complete');
+    console.log(`  Order updates received (via callback): ${orderLog.length}`);
+    console.log(`  Position updates received:             ${positionLog.length}`);
+    console.log(`  Funding updates received:              ${fundingCount}`);
+    console.log(`  Leverage settings received:            ${leverageCount}`);
+    console.log('='.repeat(60));
+  } catch (err) {
+    printOrderError('full-trader', err);
+    throw err;
+  } finally {
+    if (open.size > 0) {
+      console.error(`Cleaning up ${open.size} order(s) before disconnect`);
+      await sleep(CANCEL_DELAY_MS);
+      for (const id of [...open]) {
+        try {
+          const ack = await client.cancelOrder(id, SYMBOL);
+          if (!ack.success) throw new Error('cancel not successful');
+          open.delete(id);
+        } catch (e: unknown) {
+          printOrderError(`cleanup cancel ${id}`, e);
+          try {
+            await cancelViaRest(id);
+            open.delete(id);
+            console.log(`REST cleanup cancel ok ${id}`);
+          } catch (restErr) {
+            printOrderError(`REST cleanup cancel ${id}`, restErr);
+          }
+        }
+      }
+    }
+    await client.disconnect().catch(() => {});
+    console.log('Disconnected cleanly');
+    if (open.size > 0) {
+      throw new Error(`left ${open.size} order(s) open`);
     }
   }
-
-  console.log('='.repeat(60));
-  console.log('  Session complete');
-  console.log(`  Order updates received (via callback): ${orderLog.length}`);
-  console.log(`  Position updates received:             ${positionLog.length}`);
-  console.log(`  Funding updates received:              ${fundingCount}`);
-  console.log(`  Leverage settings received:            ${leverageCount}`);
-  console.log('='.repeat(60));
-
-  await client.disconnect();
-  console.log('Disconnected cleanly');
 }
 
 function main(): void {
